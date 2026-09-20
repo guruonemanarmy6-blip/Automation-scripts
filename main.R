@@ -13,6 +13,7 @@ for (pkg in required_packages) {
 
 # --- 2. CONFIGURATION ---
 INSTANCE_ID <- "710722687085"
+# SECURE CLOUD FETCH: Never hardcode tokens in the script!
 API_TOKEN <- Sys.getenv("ZOHO_API_TOKEN")
 WHATSAPP_CHAT_ID <- Sys.getenv("WHATSAPP_CHAT_ID")
 
@@ -32,7 +33,7 @@ if (!dir.exists(downloads_folder)) {
   downloads_folder <- file.path(Sys.getenv("HOME"), "Downloads")
 }
 
-# --- Reports Configuration ---
+# --- Reports Configuration (Updated with your 13 items) ---
 reports_config <- list(
   list(
     type = "standard",
@@ -118,10 +119,26 @@ reports_config <- list(
   ),
   list(
     type = "standard",
-    url = "https://analytics.zoho.in/open-view/159245006990240760",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007373476550",
     tab = "DSR",
     title = "Hub wise - DSR",
     filename = "11_hub_wise_dsr.png"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000001470070/view/159245005630148864",
+    tab = "Hub Wise NC", 
+    title = "Hub Wise NC",
+    filename = "12_hub_wise_nc.png",
+    sort_column = "hub"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000001470070/view/159245002188310288",
+    tab = "Lead-Tracking-Dashboard", 
+    title = "Hub-wise-leads",
+    filename = "13_hub_wise_leads.png",
+    sort_column = "Hub"
   )
 )
 
@@ -217,7 +234,6 @@ def process_reports():
             except Exception as e:
                 pass
 
-
         # -----------------------------------------------
         # 2. XPATH FAST SORTING
         # -----------------------------------------------
@@ -298,7 +314,6 @@ def process_reports():
             
             if not sorted_successfully:
                 print(f\"      [!] Error: Javascript could not locate column '{column_name}' for sorting.\", flush=True)
-
 
         # -----------------------------------------------
         # 3. ULTRA-FAST XPATH FILTERING 
@@ -553,7 +568,7 @@ send_to_whatsapp <- function(file_path, title) {
   }
 }
 
-# --- 7. EXECUTION & WHATSAPP DISTRIBUTION ---
+# --- 7. EXECUTION ---
 job <- function() {
   message(sprintf("\n==========================================="))
   message(sprintf("STARTING REPORT CAPTURE AT %s", Sys.time()))
@@ -586,5 +601,6 @@ job <- function() {
   message(sprintf("Capture and Distribution Cycle Complete at %s.", Sys.time()))
 }
 
-# --- 8. TRIGGER EXECUTION ---
+# DO NOT USE AN INFINITE LOOP (repeat { Sys.sleep(3600) }) HERE. 
+# It will crash GitHub Actions. The YAML file controls the hourly schedule.
 job()
