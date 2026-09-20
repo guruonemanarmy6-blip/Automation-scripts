@@ -197,149 +197,152 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. XPATH FAST SORTING
+        # 1. PURE V8 SORTING (BYPASSES IPC BOTTLENECK)
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
             inject_css_js = r'''() => {
-                let style = document.createElement('style');
-                style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
-                document.head.appendChild(style);
+                function scan(win) {
+                    try {
+                        let style = win.document.createElement('style');
+                        style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
+                        win.document.head.appendChild(style);
+                        for(let i=0; i<win.frames.length; i++) scan(win.frames[i]);
+                    } catch(e) {}
+                }
+                scan(window);
             }'''
-            
             try: page.evaluate(inject_css_js)
             except: pass
-            for f in page.frames:
-                try: 
-                    if not f.is_detached(): f.evaluate(inject_css_js)
-                except: pass
 
-            sort_js = r'''(colName) => {
+            sort_js = '''(colName) => {
                 let cleanName = colName.toLowerCase().split(' ').join('');
-                let els = Array.from(document.querySelectorAll('th, [role=\"columnheader\"], td[class*=\"header\"]'));
-                for (let el of els) {
-                    let rect = el.getBoundingClientRect();
-                    if (rect.height > 10 && rect.width > 20 && rect.y > 45) {
-                        let text = (el.getAttribute('title') || '') + ' ' + (el.innerText || '');
-                        let cleanText = text.toLowerCase().split(' ').join('');
-                        
-                        let match = false;
-                        if (cleanText.includes(cleanName)) {
-                            if (cleanText.includes('zero') && !cleanName.includes('zero')) match = false;
-                            else if (cleanText.includes('d2') && !cleanName.includes('d2')) match = false;
-                            else if (cleanText.includes('d6') && !cleanName.includes('d6')) match = false;
-                            else match = true;
-                        } else if (cleanText.length >= 5 && cleanText.startsWith(cleanName)) {
-                            match = true;
+                function scan(win) {
+                    try {
+                        let els = Array.from(win.document.querySelectorAll('th, [role=\"columnheader\"], td[class*=\"header\"]'));
+                        for (let el of els) {
+                            let rect = el.getBoundingClientRect();
+                            if (rect.height > 10 && rect.width > 20 && rect.y > 45) {
+                                let text = (el.getAttribute('title') || '') + ' ' + (el.innerText || '');
+                                let cleanText = text.toLowerCase().split(' ').join('');
+                                
+                                let match = false;
+                                if (cleanText.includes(cleanName)) {
+                                    if (cleanText.includes('zero') && !cleanName.includes('zero')) match = false;
+                                    else if (cleanText.includes('d2') && !cleanName.includes('d2')) match = false;
+                                    else if (cleanText.includes('d6') && !cleanName.includes('d6')) match = false;
+                                    else match = true;
+                                } else if (cleanText.length >= 5 && cleanText.startsWith(cleanName)) {
+                                    match = true;
+                                }
+                                
+                                if (match) {
+                                    el.scrollIntoView({behavior: 'instant', block: 'center'});
+                                    let icon = el.querySelector('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]');
+                                    if (icon) {
+                                        icon.scrollIntoView({behavior: 'instant', block: 'center'});
+                                        icon.click();
+                                        return true;
+                                    } else {
+                                        el.click();
+                                        return true;
+                                    }
+                                }
+                            }
                         }
-                        
-                        if (match) {
-                            el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            el.setAttribute('data-pw-sort', 'true');
-                            return {width: rect.width, x: rect.x, y: rect.y};
+                        for (let i = 0; i < win.frames.length; i++) {
+                            if (scan(win.frames[i])) return true;
                         }
-                    }
+                    } catch(e) {}
+                    return false;
                 }
-                return null;
+                return scan(window);
             }'''
 
-            sorted_successfully = False
-            for f in page.frames:
-                if f.is_detached(): continue
-                if sorted_successfully: break
-                try:
-                    res = f.evaluate(sort_js, column_name)
-                    if res:
-                        page.wait_for_timeout(1000)
-                        
-                        targetX = res['x'] + res['width'] - 10
-                        targetY = res['y'] + 10
-                        page.mouse.click(targetX, targetY)
-                        
-                        print(f\"      -> Success: Triggered sort logic.\", flush=True)
-                        sorted_successfully = True
-                        
-                        page.wait_for_timeout(1500)
-                        dismiss_js = r'''() => {
+            try:
+                if page.evaluate(sort_js, column_name):
+                    print(f\"      -> Success: Javascript forcefully executed sort action.\", flush=True)
+                    page.wait_for_timeout(1500)
+                    dismiss_js = r'''() => {
+                        function scan(win) {
                             try {
-                                let iter = document.evaluate('//*[text()=\"View Underlying Data\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                                if (iter.snapshotLength > 0) iter.snapshotItem(0).click();
+                                let iter = win.document.evaluate('//*[text()=\"View Underlying Data\"]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                                if (iter.snapshotLength > 0) { iter.snapshotItem(0).click(); return true; }
+                                for (let i = 0; i < win.frames.length; i++) if (scan(win.frames[i])) return true;
                             } catch(e){}
-                        }'''
-                        try: f.evaluate(dismiss_js)
-                        except: pass
-                        
-                        page.wait_for_timeout(10000)
-                        break
-                except Exception as e:
-                    pass
-            
-            if not sorted_successfully:
-                print(f\"      [!] Warning: Could not explicitly sort column '{column_name}'. Proceeding with default view.\", flush=True)
+                            return false;
+                        }
+                        scan(window);
+                    }'''
+                    try: page.evaluate(dismiss_js)
+                    except: pass
+                    page.wait_for_timeout(10000)
+                else:
+                    print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting.\", flush=True)
+            except Exception as e:
+                pass
+
 
         # -----------------------------------------------
-        # 2. ULTRA-FAST XPATH FILTERING 
+        # 2. PURE V8 FILTERING 
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
-            open_filter_js = r'''(label) => {
-                try {
-                    let iter = document.evaluate('//*[contains(text(), \"' + label + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                    for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                        let el = iter.snapshotItem(i);
-                        let rect = el.getBoundingClientRect();
-                        if (rect.height > 0 && rect.width > 0) {
-                            el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            return {x: rect.x + 15, y: rect.y + 35};
+            open_filter_js = '''(label) => {
+                function scan(win) {
+                    try {
+                        let iter = win.document.evaluate('//*[contains(text(), \"' + label + '\")]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
+                            let el = iter.snapshotItem(i);
+                            let rect = el.getBoundingClientRect();
+                            if (rect.height > 0 && rect.width > 0) {
+                                el.scrollIntoView({behavior: 'instant', block: 'center'});
+                                el.click();
+                                return true;
+                            }
                         }
-                    }
-                } catch(e){}
-                return null;
+                        for (let i = 0; i < win.frames.length; i++) {
+                            if (scan(win.frames[i])) return true;
+                        }
+                    } catch(e){}
+                    return false;
+                }
+                return scan(window);
             }'''
             
-            opened = False
-            for f in page.frames:
-                if f.is_detached(): continue
-                if opened: break
-                try:
-                    coords = f.evaluate(open_filter_js, filter_label)
-                    if coords:
-                        page.mouse.click(coords['x'], coords['y'])
-                        opened = True
-                except: pass
-                
-            if not opened:
-                print(f\"      [!] Warning: Could not locate filter label '{filter_label}'. Skipping filter.\", flush=True)
+            try:
+                if not page.evaluate(open_filter_js, filter_label):
+                    print(f\"      [!] Warning: Could not locate filter label '{filter_label}'. Skipping.\", flush=True)
+                    return
+            except Exception as e: 
                 return
                 
             page.wait_for_timeout(2500)
 
             def click_popup_btn(btn_text):
-                click_btn_js = r'''(text) => {
-                    try {
-                        let iter = document.evaluate('//*[text()=\"' + text + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                            let el = iter.snapshotItem(i);
-                            let rect = el.getBoundingClientRect();
-                            if (rect.height > 0) {
-                                return {x: rect.x + (rect.width/2), y: rect.y + (rect.height/2)};
+                click_btn_js = '''(text) => {
+                    function scan(win) {
+                        try {
+                            let iter = win.document.evaluate('//*[text()=\"' + text + '\"]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                            for (let i = iter.snapshotLength - 1; i >= 0; i--) {
+                                let el = iter.snapshotItem(i);
+                                if (el.getBoundingClientRect().height > 0) {
+                                    el.click();
+                                    return true;
+                                }
                             }
-                        }
-                    } catch(e){}
-                    return null;
+                            for (let i = 0; i < win.frames.length; i++) {
+                                if (scan(win.frames[i])) return true;
+                            }
+                        } catch(e){}
+                        return false;
+                    }
+                    return scan(window);
                 }'''
-                
-                for f in page.frames:
-                    if f.is_detached(): continue
-                    try:
-                        coords = f.evaluate(click_btn_js, btn_text)
-                        if coords:
-                            page.mouse.click(coords['x'], coords['y'])
-                            return True
-                    except: pass
-                return False
+                try: return page.evaluate(click_btn_js, btn_text)
+                except: return False
 
             print(\"      -> Clicking 'Clear' defaults...\", flush=True)
             if not click_popup_btn(\"Clear\"):
@@ -369,7 +372,7 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # THE LEVEL 12 FAIL-SAFE LOOP
+        # THE FAIL-SAFE LOOP
         # -----------------------------------------------
         try:
             for idx, item in enumerate(REPORTS_LIST):
@@ -384,7 +387,6 @@ def process_reports():
                     print(f'\\n======================================================', flush=True)
                     print(f'--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
 
-                    # --- INSTANTLY KILL 'UNSAVED CHANGES' ZOHO POPUPS ---
                     try: page.evaluate(\"window.onbeforeunload = null;\")
                     except: pass
 
@@ -404,95 +406,57 @@ def process_reports():
                     page.wait_for_timeout(5000)
 
                     # -----------------------------------------------
-                    # STRICT SIZE-AWARE CROPPING ENGINE (XPATH)
+                    # 3. PURE V8 SIZE-AWARE CROPPING ENGINE
                     # -----------------------------------------------
-                    find_and_scroll_js = r'''(title) => {
-                        try {
-                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                            let matches = [];
-                            for(let i=0; i<iter.snapshotLength; i++) {
-                                let el = iter.snapshotItem(i);
-                                if(el.offsetHeight > 0) matches.push(el);
-                            }
-                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                            for (let match of matches) {
-                                let container = match;
-                                while (container && container.parentElement) {
-                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                        container.scrollIntoView({behavior: 'instant', block: 'center'});
-                                        return true;
-                                    }
-                                    container = container.parentElement;
+                    find_and_crop_js = '''(title) => {
+                        function scan(win, offsetX, offsetY) {
+                            try {
+                                let iter = win.document.evaluate('//*[contains(text(), \"' + title + '\")]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                                let matches = [];
+                                for(let i=0; i<iter.snapshotLength; i++) {
+                                    let el = iter.snapshotItem(i);
+                                    if(el.offsetHeight > 0) matches.push(el);
                                 }
-                            }
-                        } catch(e){}
-                        return false;
-                    }'''
-                    
-                    for f in page.frames:
-                        if f.is_detached(): continue
-                        try:
-                            if f.evaluate(find_and_scroll_js, table_title): break
-                        except: pass
-                    
-                    page.wait_for_timeout(3000)
-
-                    find_and_crop_js = r'''(title) => {
-                        try {
-                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                            let matches = [];
-                            for(let i=0; i<iter.snapshotLength; i++) {
-                                let el = iter.snapshotItem(i);
-                                if(el.offsetHeight > 0) matches.push(el);
-                            }
-                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                            for (let match of matches) {
-                                let container = match;
-                                while (container && container.parentElement) {
-                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                        let rect = container.getBoundingClientRect();
-                                        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                                matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
+                                for (let match of matches) {
+                                    let container = match;
+                                    while (container && container.parentElement) {
+                                        if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                            container.scrollIntoView({behavior: 'instant', block: 'center'});
+                                            let rect = container.getBoundingClientRect();
+                                            return { x: rect.x + offsetX, y: rect.y + offsetY, width: rect.width, height: rect.height };
+                                        }
+                                        container = container.parentElement;
                                     }
-                                    container = container.parentElement;
                                 }
-                            }
-                        } catch(e){}
-                        return null;
+                                
+                                let iframes = win.document.querySelectorAll('iframe');
+                                for(let i = 0; i < iframes.length; i++) {
+                                    let rect = iframes[i].getBoundingClientRect();
+                                    let res = scan(win.frames[i], offsetX + rect.x, offsetY + rect.y);
+                                    if (res) return res;
+                                }
+                            } catch(e){}
+                            return null;
+                        }
+                        return scan(window, 0, 0);
                     }'''
 
-                    crop_box = None
-                    for f in page.frames:
-                        if f.is_detached(): continue
-                        try:
-                            raw_rect = f.evaluate(find_and_crop_js, table_title)
-                            if raw_rect:
-                                offset_x = 0
-                                offset_y = 0
-                                
-                                if f != page.main_frame:
-                                    try:
-                                        f_box = f.frame_element().bounding_box()
-                                        if f_box:
-                                            offset_x = f_box['x']
-                                            offset_y = f_box['y']
-                                    except: pass
-
-                                vw = page.evaluate('window.innerWidth')
-                                vh = page.evaluate('window.innerHeight')
-                                
-                                x = max(0, raw_rect['x'] + offset_x)
-                                y = max(0, raw_rect['y'] + offset_y)
-                                width = min(raw_rect['width'], vw - x)
-                                height = min(raw_rect['height'], vh - y)
-                                
-                                crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
-                                break
-                        except: pass
-
-                    if crop_box and crop_box['valid']:
-                        page.screenshot(path=file_path, clip={'x': crop_box['x'], 'y': crop_box['y'], 'width': crop_box['width'], 'height': crop_box['height']})
-                        status = f'CROPPED ({int(crop_box[\"width\"])})x({int(crop_box[\"height\"])})'
-                    else:
+                    try:
+                        crop_box = page.evaluate(find_and_crop_js, table_title)
+                        if crop_box and crop_box['height'] > 100 and crop_box['width'] > 100:
+                            vw = page.evaluate('window.innerWidth')
+                            vh = page.evaluate('window.innerHeight')
+                            cx = max(0, crop_box['x'])
+                            cy = max(0, crop_box['y'])
+                            cw = min(crop_box['width'], vw - cx)
+                            ch = min(crop_box['height'], vh - cy)
+                            page.screenshot(path=file_path, clip={'x': cx, 'y': cy, 'width': cw, 'height': ch})
+                            status = f'CROPPED ({int(cw)})x({int(ch)})'
+                        else:
+                            page.screenshot(path=file_path, full_page=False)
+                            status = 'FULL VIEWPORT (Fallback)'
+                    except Exception as e:
                         page.screenshot(path=file_path, full_page=False)
                         status = 'FULL VIEWPORT (Fallback)'
 
