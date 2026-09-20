@@ -13,8 +13,9 @@ for (pkg in required_packages) {
 
 # --- 2. CONFIGURATION ---
 INSTANCE_ID <- "710722687085"
-API_TOKEN <- "502764d8d4474e06aa0e3daada0c7fde6646e9ea53214d2bb8"
-WHATSAPP_CHAT_ID <- "120363411226278041@g.us"
+# Pulling sensitive tokens securely from GitHub Actions Environments
+API_TOKEN <- Sys.getenv("ZOHO_API_TOKEN")
+WHATSAPP_CHAT_ID <- Sys.getenv("WHATSAPP_CHAT_ID")
 
 # --- 3. DYNAMIC PLAYWRIGHT SETUP ---
 env_name <- "zoho_automation_env"
@@ -131,8 +132,18 @@ capture_all_reports <- function() {
   message(sprintf("Target directory resolved to: %s", downloads_folder))
   message("Opening background browser to process reports locally...")
   
+  # Export cookies from GitHub Secret to a temporary JSON file
+  cookie_data <- Sys.getenv("ZOHO_COOKIES")
+  auth_file <- normalizePath(file.path(getwd(), "zoho_auth.json"), winslash = "/", mustWork = FALSE)
+  
+  if (nzchar(cookie_data)) {
+    writeLines(cookie_data, auth_file)
+    message("Successfully loaded Zoho Cookies from GitHub Secrets.")
+  } else {
+    message("WARNING: ZOHO_COOKIES secret is empty or missing!")
+  }
+  
   json_data_str <- as.character(jsonlite::toJSON(reports_config, auto_unbox = TRUE))
-  user_dir_str <- normalizePath(file.path(getwd(), "zoho_r_session"), winslash = "/", mustWork = FALSE)
   target_dir_str <- normalizePath(downloads_folder, winslash = "/", mustWork = FALSE)
   
   py_script <- paste0("
@@ -142,21 +153,30 @@ import os
 import traceback
 from playwright.sync_api import sync_playwright
 
-USER_DATA_DIR = r'''", user_dir_str, "'''
 TARGET_DIR = r'''", target_dir_str, "'''
 REPORTS_LIST = json.loads(r'''", json_data_str, "''')
+AUTH_FILE = r'''", auth_file, "'''
 
 captured_results = []
 
 def process_reports():
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=USER_DATA_DIR,
+        browser = p.chromium.launch(
             headless=True,
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            args=['--disable-blink-features=AutomationControlled'],
-            viewport={'width': 1920, 'height': 1080}
+            args=['--disable-blink-features=AutomationControlled']
         )
+        
+        context_args = {
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'viewport': {'width': 1920, 'height': 1080}
+        }
+        
+        # Inject the saved cookies into the browser context to bypass login
+        if os.path.exists(AUTH_FILE) and os.path.getsize(AUTH_FILE) > 0:
+            print('Injecting saved cookies for authentication...')
+            context_args['storage_state'] = AUTH_FILE
+            
+        context = browser.new_context(**context_args)
         page = context.new_page()
         page.set_default_timeout(45000)
 
@@ -471,6 +491,7 @@ def process_reports():
 
         finally:
             context.close()
+            browser.close()
 
 process_reports()
 ")
@@ -480,6 +501,12 @@ process_reports()
 
 # --- 6. WHATSAPP SENDING FUNCTION ---
 send_to_whatsapp <- function(file_path, title) {
+  # Skip sending if token is missing (prevents crashes during setup/testing)
+  if (!nzchar(API_TOKEN) || !nzchar(WHATSAPP_CHAT_ID)) {
+    message("   -> [SKIPPED] Missing WhatsApp API credentials in GitHub Secrets.")
+    return()
+  }
+  
   url <- sprintf("https://api.green-api.com/waInstance%s/sendFileByUpload/%s", INSTANCE_ID, API_TOKEN)
   caption_text <- sprintf("📊 *%s*", title)
   
@@ -534,16 +561,7 @@ job <- function() {
   message(sprintf("Capture and Distribution Cycle Complete at %s.", Sys.time()))
 }
 
-# --- 8. HOURLY SCHEDULER ---
-run_hourly_job <- function() {
-  message("\n>>> HOURLY SCHEDULER STARTED <<<")
-  message("Keep this console open to allow the script to run continuously.")
-  
-  repeat {
-    job()
-    message(sprintf("\n>>> Waiting for 1 hour until next run... (Press ESC or Ctrl+C to stop) <<<"))
-    Sys.sleep(3600) 
-  }
-}
-
-run_hourly_job()
+# --- 8. TRIGGER EXECUTION ---
+# Note: GitHub Actions handles the hourly scheduling (via the cron trigger in the YAML).
+# We only need to run the script once per execution.
+job()
