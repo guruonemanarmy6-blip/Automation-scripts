@@ -13,7 +13,6 @@ for (pkg in required_packages) {
 
 # --- 2. CONFIGURATION ---
 INSTANCE_ID <- "710722687085"
-# Restored direct tokens to bypass GitHub Secret mapping issues
 API_TOKEN <- "502764d8d4474e06aa0e3daada0c7fde6646e9ea53214d2bb8"
 WHATSAPP_CHAT_ID <- "120363411226278041@g.us"
 
@@ -198,7 +197,7 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. LEVEL 17 XPATH SORTING (Uses Filter Logic)
+        # 1. LEVEL 18 PURE V8 OMNI-SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
@@ -206,27 +205,39 @@ def process_reports():
             sort_js = r'''(colName) => {
                 function scan(win) {
                     try {
-                        let iter = win.document.evaluate('//*[contains(text(), \"' + colName + '\")]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                            let el = iter.snapshotItem(i);
+                        let style = win.document.createElement('style');
+                        style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
+                        win.document.head.appendChild(style);
+                        
+                        let cleanName = colName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        let els = Array.from(win.document.querySelectorAll('th, [role=\"columnheader\"], td[class*=\"header\"]'));
+                        
+                        for (let el of els) {
                             let rect = el.getBoundingClientRect();
-                            if (rect.height > 0 && rect.width > 0) {
-                                el.scrollIntoView({behavior: 'instant', block: 'center'});
+                            if (rect.height > 5 && rect.width > 20) {
+                                let text = (el.getAttribute('title') || '') + ' ' + (el.textContent || '');
+                                let cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
                                 
-                                // In Zoho, the sort arrow is always on the right edge of the header cell.
-                                // We calculate coordinates 10 pixels from the right edge and strike there.
-                                let targetX = rect.x + rect.width - 15;
-                                let targetY = rect.y + (rect.height / 2);
-                                
-                                let dropEl = win.document.elementFromPoint(targetX, targetY);
-                                if(dropEl) {
-                                    dropEl.click();
-                                    dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
-                                    dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-                                } else {
-                                    el.click();
+                                if (cleanText.includes(cleanName) && cleanText.length > 0) {
+                                    if (cleanText.includes('zero') && !cleanName.includes('zero')) continue;
+                                    if (cleanText.includes('d2') && !cleanName.includes('d2')) continue;
+                                    if (cleanText.includes('d6') && !cleanName.includes('d6')) continue;
+                                    
+                                    el.scrollIntoView({behavior: 'instant', block: 'center'});
+                                    
+                                    let icon = el.querySelector('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]');
+                                    if (icon) {
+                                        icon.scrollIntoView({behavior: 'instant', block: 'center'});
+                                        icon.click();
+                                        icon.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                                        icon.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                                    } else {
+                                        el.click();
+                                        el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                                        el.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                                    }
+                                    return true;
                                 }
-                                return true;
                             }
                         }
                         for (let i = 0; i < win.frames.length; i++) {
@@ -263,69 +274,70 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # 2. ULTRA-FAST XPATH FILTERING 
+        # 2. LEVEL 18 PURE V8 FILTERING (NO IPC LOOPING)
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
             open_filter_js = r'''(label) => {
-                try {
-                    let iter = document.evaluate('//*[contains(text(), \"' + label + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                    for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                        let el = iter.snapshotItem(i);
-                        let rect = el.getBoundingClientRect();
-                        if (rect.height > 0 && rect.width > 0) {
-                            el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            let targetX = rect.x + 15;
-                            let targetY = rect.y + 35;
-                            let dropEl = document.elementFromPoint(targetX, targetY) || el;
-                            dropEl.click();
-                            dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
-                            dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-                            return true;
+                function scan(win) {
+                    try {
+                        let iter = win.document.evaluate('//*[contains(text(), \"' + label + '\")]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
+                            let el = iter.snapshotItem(i);
+                            let rect = el.getBoundingClientRect();
+                            if (rect.height > 0 && rect.width > 0) {
+                                el.scrollIntoView({behavior: 'instant', block: 'center'});
+                                let targetX = rect.x + 15;
+                                let targetY = rect.y + 35;
+                                let dropEl = win.document.elementFromPoint(targetX, targetY) || el;
+                                dropEl.click();
+                                dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                                dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                                return true;
+                            }
                         }
-                    }
-                } catch(e){}
-                return false;
+                        for (let i = 0; i < win.frames.length; i++) {
+                            if (scan(win.frames[i])) return true;
+                        }
+                    } catch(e){}
+                    return false;
+                }
+                return scan(window);
             }'''
             
-            opened = False
-            for f in page.frames:
-                if f.is_detached(): continue
-                if opened: break
-                try:
-                    if f.evaluate(open_filter_js, filter_label):
-                        opened = True
-                except: pass
-                
-            if not opened:
-                print(f\"      [!] Warning: Could not locate filter label '{filter_label}'. Skipping filter.\", flush=True)
+            try:
+                if not page.evaluate(open_filter_js, filter_label):
+                    print(f\"      [!] Warning: Could not locate filter label '{filter_label}'. Skipping filter.\", flush=True)
+                    return
+            except Exception as e:
+                print(f\"      [!] Warning: Error locating filter label '{filter_label}'. Skipping filter.\", flush=True)
                 return
                 
             page.wait_for_timeout(2500)
 
             def click_popup_btn(btn_text):
                 click_btn_js = r'''(text) => {
-                    try {
-                        let iter = document.evaluate('//*[text()=\"' + text + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                            let el = iter.snapshotItem(i);
-                            if (el.getBoundingClientRect().height > 0) {
-                                el.click();
-                                return true;
+                    function scan(win) {
+                        try {
+                            let iter = win.document.evaluate('//*[text()=\"' + text + '\"]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                            for (let i = iter.snapshotLength - 1; i >= 0; i--) {
+                                let el = iter.snapshotItem(i);
+                                if (el.getBoundingClientRect().height > 0) {
+                                    el.click();
+                                    return true;
+                                }
                             }
-                        }
-                    } catch(e){}
-                    return false;
+                            for (let i = 0; i < win.frames.length; i++) {
+                                if (scan(win.frames[i])) return true;
+                            }
+                        } catch(e){}
+                        return false;
+                    }
+                    return scan(window);
                 }'''
-                
-                for f in page.frames:
-                    if f.is_detached(): continue
-                    try:
-                        if f.evaluate(click_btn_js, btn_text):
-                            return True
-                    except: pass
-                return False
+                try: return page.evaluate(click_btn_js, btn_text)
+                except: return False
 
             print(\"      -> Clicking 'Clear' defaults...\", flush=True)
             if not click_popup_btn(\"Clear\"):
@@ -389,98 +401,62 @@ def process_reports():
                     page.wait_for_timeout(5000)
 
                     # -----------------------------------------------
-                    # 3. DEPTH-LIMITED CROPPING ENGINE
+                    # 3. LEVEL 18 PURE V8 CROPPING ENGINE (NO IPC LOOPING)
                     # -----------------------------------------------
-                    find_and_scroll_js = r'''(title) => {
-                        try {
-                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                            let matches = [];
-                            for(let i=0; i<iter.snapshotLength; i++) {
-                                let el = iter.snapshotItem(i);
-                                if(el.offsetHeight > 0) matches.push(el);
-                            }
-                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                            for (let match of matches) {
-                                let container = match;
-                                let depth = 0;
-                                while (container && container.parentElement && depth < 30) {
-                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                        container.scrollIntoView({behavior: 'instant', block: 'center'});
-                                        return true;
-                                    }
-                                    container = container.parentElement;
-                                    depth++;
-                                }
-                            }
-                        } catch(e){}
-                        return false;
-                    }'''
-                    
-                    for f in page.frames:
-                        if f.is_detached(): continue
-                        try:
-                            if f.evaluate(find_and_scroll_js, table_title): break
-                        except: pass
-                    
-                    page.wait_for_timeout(3000)
-
                     find_and_crop_js = r'''(title) => {
-                        try {
-                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                            let matches = [];
-                            for(let i=0; i<iter.snapshotLength; i++) {
-                                let el = iter.snapshotItem(i);
-                                if(el.offsetHeight > 0) matches.push(el);
-                            }
-                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                            for (let match of matches) {
-                                let container = match;
-                                let depth = 0;
-                                while (container && container.parentElement && depth < 30) {
-                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                        let rect = container.getBoundingClientRect();
-                                        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-                                    }
-                                    container = container.parentElement;
-                                    depth++;
+                        function scan(win, offsetX, offsetY) {
+                            try {
+                                let iter = win.document.evaluate('//*[contains(text(), \"' + title + '\")]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                                let matches = [];
+                                for(let i=0; i<iter.snapshotLength; i++) {
+                                    let el = iter.snapshotItem(i);
+                                    if(el.offsetHeight > 0) matches.push(el);
                                 }
-                            }
-                        } catch(e){}
-                        return null;
+                                matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
+                                for (let match of matches) {
+                                    let container = match;
+                                    let depth = 0;
+                                    while (container && container.parentElement && depth < 30) {
+                                        if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                            container.scrollIntoView({behavior: 'instant', block: 'center'});
+                                            let rect = container.getBoundingClientRect();
+                                            return { x: rect.x + offsetX, y: rect.y + offsetY, width: rect.width, height: rect.height };
+                                        }
+                                        container = container.parentElement;
+                                        depth++;
+                                    }
+                                }
+                                
+                                let iframes = win.document.querySelectorAll('iframe');
+                                for(let i=0; i < iframes.length; i++) {
+                                    try {
+                                        let rect = iframes[i].getBoundingClientRect();
+                                        let res = scan(win.frames[i], offsetX + rect.x, offsetY + rect.y);
+                                        if(res) return res;
+                                    } catch(e){}
+                                }
+                            } catch(e){}
+                            return null;
+                        }
+                        return scan(window, 0, 0);
                     }'''
 
                     crop_box = None
-                    for f in page.frames:
-                        if f.is_detached(): continue
-                        try:
-                            raw_rect = f.evaluate(find_and_crop_js, table_title)
-                            if raw_rect:
-                                offset_x = 0
-                                offset_y = 0
-                                
-                                if f != page.main_frame:
-                                    try:
-                                        f_box = f.frame_element().bounding_box()
-                                        if f_box:
-                                            offset_x = f_box['x']
-                                            offset_y = f_box['y']
-                                    except: pass
+                    try:
+                        crop_box = page.evaluate(find_and_crop_js, table_title)
+                    except: pass
 
-                                vw = page.evaluate('window.innerWidth')
-                                vh = page.evaluate('window.innerHeight')
-                                
-                                x = max(0, raw_rect['x'] + offset_x)
-                                y = max(0, raw_rect['y'] + offset_y)
-                                width = min(raw_rect['width'], vw - x)
-                                height = min(raw_rect['height'], vh - y)
-                                
-                                crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
-                                break
-                        except: pass
-
-                    if crop_box and crop_box['valid']:
-                        page.screenshot(path=file_path, clip={'x': crop_box['x'], 'y': crop_box['y'], 'width': crop_box['width'], 'height': crop_box['height']}, timeout=25000)
-                        status = f'CROPPED ({int(crop_box[\"width\"])})x({int(crop_box[\"height\"])})'
+                    if crop_box and crop_box.get('height', 0) > 100 and crop_box.get('width', 0) > 100:
+                        vw = page.evaluate('window.innerWidth')
+                        vh = page.evaluate('window.innerHeight')
+                        
+                        x = max(0, crop_box['x'])
+                        y = max(0, crop_box['y'])
+                        width = min(crop_box['width'], vw - x)
+                        height = min(crop_box['height'], vh - y)
+                        
+                        page.screenshot(path=file_path, clip={'x': x, 'y': y, 'width': width, 'height': height}, timeout=25000)
+                        status = f'CROPPED ({int(width)})x({int(height)})'
                     else:
                         page.screenshot(path=file_path, full_page=False, timeout=25000)
                         status = 'FULL VIEWPORT (Fallback)'
