@@ -192,7 +192,7 @@ def process_reports():
             print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\", flush=True)
             try:
                 time.sleep(4)
-                find_tab_js = '''(tabName) => {
+                find_tab_js = r'''(tabName) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     for (let el of els) {
                         if (el.textContent && el.textContent.trim() === tabName) {
@@ -228,7 +228,7 @@ def process_reports():
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
-            inject_css_js = '''() => {
+            inject_css_js = r'''() => {
                 let style = document.createElement('style');
                 style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
                 document.head.appendChild(style);
@@ -240,7 +240,7 @@ def process_reports():
                 try: fr.evaluate(inject_css_js)
                 except: pass
 
-            tag_col_js = '''(targetCol) => {
+            tag_col_js = r'''(targetCol) => {
                 let targetClean = targetCol.toLowerCase().replace(/\\s/g, '');
                 let els = Array.from(document.querySelectorAll('th, [role=\"columnheader\"], td[class*=\"header\"]'));
                 for (let el of els) {
@@ -302,7 +302,7 @@ def process_reports():
                                 target.click(position={'x': res['width'] - 4, 'y': 4}, force=True, timeout=2000)
                         except: pass
                         
-                        f.evaluate(\"document.querySelector('[data-pw-sort=\"true\"]').removeAttribute('data-pw-sort')\")
+                        f.evaluate('''document.querySelector('[data-pw-sort=\"true\"]').removeAttribute('data-pw-sort')''')
                         sorted_successfully = True
                         time.sleep(10)
                         break
@@ -319,7 +319,7 @@ def process_reports():
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
-            tag_filter_js = '''(label) => {
+            tag_filter_js = r'''(label) => {
                 let els = Array.from(document.querySelectorAll('*'));
                 for (let i = els.length - 1; i >= 0; i--) {
                     let el = els[i];
@@ -342,7 +342,7 @@ def process_reports():
                     if f.evaluate(tag_filter_js, filter_label):
                         target = f.locator('[data-pw-filter=\"true\"]')
                         target.click(position={'x': 15, 'y': 35}, force=True, timeout=3000)
-                        f.evaluate(\"document.querySelector('[data-pw-filter=\"true\"]').removeAttribute('data-pw-filter')\")
+                        f.evaluate('''document.querySelector('[data-pw-filter=\"true\"]').removeAttribute('data-pw-filter')''')
                         opened = True
                 except: pass
                 
@@ -353,23 +353,23 @@ def process_reports():
             time.sleep(2.5)
 
             def click_popup_btn(btn_text):
-                tag_btn_js = f'''(text) => {{
+                tag_btn_js = r'''(text) => {
                     let els = Array.from(document.querySelectorAll('*'));
-                    for (let i = els.length - 1; i >= 0; i--) {{
+                    for (let i = els.length - 1; i >= 0; i--) {
                         let el = els[i];
-                        if (el.textContent === text && el.getBoundingClientRect().height > 0) {{
+                        if (el.textContent === text && el.getBoundingClientRect().height > 0) {
                             el.setAttribute('data-pw-btn', 'true');
                             return true;
-                        }}
-                    }}
+                        }
+                    }
                     return false;
-                }}'''
+                }'''
                 
                 for f in [page] + page.frames:
                     try:
                         if f.evaluate(tag_btn_js, btn_text):
                             f.locator('[data-pw-btn=\"true\"]').click(force=True, timeout=2000)
-                            f.evaluate(\"document.querySelector('[data-pw-btn=\"true\"]').removeAttribute('data-pw-btn')\")
+                            f.evaluate('''document.querySelector('[data-pw-btn=\"true\"]').removeAttribute('data-pw-btn')''')
                             return True
                     except: pass
                 return False
@@ -430,7 +430,7 @@ def process_reports():
                 # -----------------------------------------------
                 # 4. STRICT SIZE-AWARE CROPPING ENGINE
                 # -----------------------------------------------
-                find_and_scroll_js = '''(title) => {
+                find_and_scroll_js = r'''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
                     matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
@@ -454,7 +454,7 @@ def process_reports():
                 
                 time.sleep(3)
 
-                find_and_crop_js = '''(title) => {
+                find_and_crop_js = r'''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
                     matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
