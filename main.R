@@ -137,6 +137,10 @@ capture_all_reports <- function() {
   auth_file <- normalizePath(file.path(getwd(), "zoho_auth.json"), winslash = "/", mustWork = FALSE)
   
   if (nzchar(cookie_data)) {
+    # FIX: Translate cookie formatting so Playwright accepts it
+    cookie_data <- gsub('"unspecified"', '"Lax"', cookie_data)
+    cookie_data <- gsub('"no_restriction"', '"None"', cookie_data)
+    
     writeLines(cookie_data, auth_file)
     message("Successfully loaded Zoho Cookies from GitHub Secrets.")
   } else {
