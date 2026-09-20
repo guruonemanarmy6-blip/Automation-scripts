@@ -132,7 +132,6 @@ capture_all_reports <- function() {
   message(sprintf("Target directory resolved to: %s", downloads_folder))
   message("Opening background browser to process reports locally...")
   
-  # Export cookies from GitHub Secret to a temporary JSON file
   cookie_data <- Sys.getenv("ZOHO_COOKIES")
   auth_file <- normalizePath(file.path(getwd(), "zoho_auth.json"), winslash = "/", mustWork = FALSE)
   
@@ -140,7 +139,6 @@ capture_all_reports <- function() {
     cookie_data <- gsub('"unspecified"', '"Lax"', cookie_data)
     cookie_data <- gsub('"no_restriction"', '"None"', cookie_data)
     cookie_data <- gsub('"strict"', '"Strict"', cookie_data)
-    
     writeLines(cookie_data, auth_file)
     message("Successfully loaded Zoho Cookies from GitHub Secrets.")
   } else {
@@ -152,7 +150,6 @@ capture_all_reports <- function() {
   
   py_script <- paste0("
 import json
-import time
 import os
 import traceback
 from playwright.sync_api import sync_playwright
@@ -190,8 +187,8 @@ def process_reports():
         def click_dashboard_tab(target_tab_name):
             print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\", flush=True)
             try:
-                time.sleep(4)
-                find_tab_js = '''(tabName) => {
+                page.wait_for_timeout(4000)
+                find_tab_js = r'''(tabName) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     for (let el of els) {
                         if (el.textContent && el.textContent.trim() === tabName) {
@@ -214,7 +211,7 @@ def process_reports():
                 
                 if clicked:
                     print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}'\", flush=True)
-                    time.sleep(10)
+                    page.wait_for_timeout(10000)
                 else:
                     print(f\"      -> Warning: Tab '{target_tab_name}' not found or already active.\", flush=True)
             except Exception as e:
@@ -222,12 +219,12 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # 2. PURE JS SORTING (BYPASSES PLAYWRIGHT TIMEOUTS)
+        # 2. PURE JS SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
-            inject_css_js = '''() => {
+            inject_css_js = r'''() => {
                 let style = document.createElement('style');
                 style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
                 document.head.appendChild(style);
@@ -239,7 +236,7 @@ def process_reports():
                 try: fr.evaluate(inject_css_js)
                 except: pass
 
-            sort_js = '''(colName) => {
+            sort_js = r'''(colName) => {
                 let cleanName = colName.toLowerCase().split(' ').join('');
                 let els = Array.from(document.querySelectorAll('th, [role=\"columnheader\"], td[class*=\"header\"]'));
                 for (let el of els) {
@@ -284,15 +281,15 @@ def process_reports():
                         print(f\"      -> Success: Javascript forcefully executed sort action ({res}).\", flush=True)
                         sorted_successfully = True
                         
-                        time.sleep(1)
-                        dismiss_js = '''() => {
+                        page.wait_for_timeout(1000)
+                        dismiss_js = r'''() => {
                             let popups = Array.from(document.querySelectorAll('*')).filter(el => el.textContent === 'View Underlying Data');
                             if(popups.length > 0) popups[0].click();
                         }'''
                         try: f.evaluate(dismiss_js)
                         except: pass
                         
-                        time.sleep(10)
+                        page.wait_for_timeout(10000)
                         break
                 except Exception as e:
                     pass
@@ -302,12 +299,12 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # 3. PURE JS FILTERING
+        # 3. PURE JS FILTERING (BYPASSES PLAYWRIGHT CRASHES)
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
-            open_filter_js = '''(label) => {
+            open_filter_js = r'''(label) => {
                 let els = Array.from(document.querySelectorAll('*'));
                 for (let i = els.length - 1; i >= 0; i--) {
                     let el = els[i];
@@ -315,7 +312,16 @@ def process_reports():
                         let rect = el.getBoundingClientRect();
                         if (rect.height > 0 && rect.width > 0) {
                             el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            el.click();
+                            
+                            // Instant coordinate click logic avoiding Playwright actionability checks
+                            let targetX = rect.x + 15;
+                            let targetY = rect.y + 35;
+                            let dropEl = document.elementFromPoint(targetX, targetY) || el;
+                            
+                            dropEl.click();
+                            dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                            dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                            dropEl.dispatchEvent(new MouseEvent('click', {bubbles:true}));
                             return true;
                         }
                     }
@@ -335,10 +341,10 @@ def process_reports():
                 print(f\"      [!] Error: Could not locate filter label '{filter_label}'\", flush=True)
                 return
                 
-            time.sleep(2.5)
+            page.wait_for_timeout(2500)
 
             def click_popup_btn(btn_text):
-                click_btn_js = '''(text) => {
+                click_btn_js = r'''(text) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     for (let i = els.length - 1; i >= 0; i--) {
                         let el = els[i];
@@ -360,28 +366,28 @@ def process_reports():
             print(\"      -> Clicking 'Clear' defaults...\", flush=True)
             if not click_popup_btn(\"Clear\"):
                 click_popup_btn(\"Select None\")
-            time.sleep(1)
+            page.wait_for_timeout(1000)
 
             print(f\"      -> Typing '{filter_value}'...\", flush=True)
             page.keyboard.type(filter_value)
-            time.sleep(1.5)
+            page.wait_for_timeout(1500)
 
             print(f\"      -> Selecting '{filter_value}' box...\", flush=True)
             if not click_popup_btn(filter_value):
                 page.keyboard.press(\"ArrowDown\")
-                time.sleep(0.5)
+                page.wait_for_timeout(500)
                 page.keyboard.press(\"Space\")
-            time.sleep(1)
+            page.wait_for_timeout(1000)
 
             print(\"      -> Clicking 'OK' to lock filter...\", flush=True)
             if not click_popup_btn(\"OK\"):
                 if not click_popup_btn(\"Apply\"):
                     page.keyboard.press(\"Enter\")
             
-            time.sleep(0.5)
+            page.wait_for_timeout(500)
             page.keyboard.press(\"Escape\") 
             print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
-            time.sleep(10) 
+            page.wait_for_timeout(10000) 
 
         try:
             for idx, item in enumerate(REPORTS_LIST):
@@ -395,7 +401,7 @@ def process_reports():
                 print(f'\\n--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
 
                 page.goto(report_url, wait_until='domcontentloaded')
-                time.sleep(15) 
+                page.wait_for_timeout(15000) 
 
                 click_dashboard_tab(tab_name)
                 apply_filter('SZM:', 'Gursewak Singh')
@@ -408,12 +414,12 @@ def process_reports():
                 if 'sort_column' in item:
                     apply_sort(item['sort_column'])
                     
-                time.sleep(5)
+                page.wait_for_timeout(5000)
 
                 # -----------------------------------------------
                 # 4. STRICT SIZE-AWARE CROPPING ENGINE
                 # -----------------------------------------------
-                find_and_scroll_js = '''(title) => {
+                find_and_scroll_js = r'''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
                     matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
@@ -435,9 +441,9 @@ def process_reports():
                         if f.evaluate(find_and_scroll_js, table_title): break
                     except: pass
                 
-                time.sleep(3)
+                page.wait_for_timeout(3000)
 
-                find_and_crop_js = '''(title) => {
+                find_and_crop_js = r'''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
                     matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
