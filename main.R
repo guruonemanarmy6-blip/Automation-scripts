@@ -212,7 +212,6 @@ def process_reports():
             try: page.evaluate(inject_css_js)
             except: pass
             for fr in page.frames:
-                if fr.is_detached(): continue
                 try: fr.evaluate(inject_css_js)
                 except: pass
 
@@ -254,7 +253,6 @@ def process_reports():
 
             sorted_successfully = False
             for f in [page] + page.frames:
-                if f.is_detached(): continue
                 if sorted_successfully: break
                 try:
                     res = f.evaluate(sort_js, column_name)
@@ -309,7 +307,6 @@ def process_reports():
             
             opened = False
             for f in [page] + page.frames:
-                if f.is_detached(): continue
                 if opened: break
                 try:
                     if f.evaluate(open_filter_js, filter_label):
@@ -338,7 +335,6 @@ def process_reports():
                 }'''
                 
                 for f in [page] + page.frames:
-                    if f.is_detached(): continue
                     try:
                         if f.evaluate(click_btn_js, btn_text):
                             return True
@@ -389,8 +385,6 @@ def process_reports():
                 page.goto(report_url, wait_until='domcontentloaded')
                 page.wait_for_timeout(15000) 
                 
-                # --- REDUNDANT TAB CLICK ENGINE DELETED ENTIRELY ---
-                
                 apply_filter('SZM:', 'Gursewak Singh')
 
                 if report_type == 'custom_filter':
@@ -430,7 +424,6 @@ def process_reports():
                 }'''
                 
                 for f in [page] + page.frames:
-                    if f.is_detached(): continue
                     try:
                         if f.evaluate(find_and_scroll_js, table_title): break
                     except: pass
@@ -462,7 +455,6 @@ def process_reports():
 
                 crop_box = None
                 for f in [page] + page.frames:
-                    if f.is_detached(): continue
                     try:
                         raw_rect = f.evaluate(find_and_crop_js, table_title)
                         if raw_rect:
