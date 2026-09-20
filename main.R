@@ -192,7 +192,7 @@ def process_reports():
             
         context = browser.new_context(**context_args)
         page = context.new_page()
-        page.set_default_timeout(60000) # Increased base timeout
+        page.set_default_timeout(60000) 
         
         page.on('dialog', lambda dialog: dialog.accept())
 
@@ -253,7 +253,6 @@ def process_reports():
                     if res:
                         page.wait_for_timeout(1000)
                         
-                        # Use raw coordinate click to bypass Playwright's element visibility traps
                         targetX = res['x'] + res['width'] - 10
                         targetY = res['y'] + 10
                         page.mouse.click(targetX, targetY)
@@ -370,146 +369,145 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # THE LEVEL 11 FAIL-SAFE LOOP
+        # THE LEVEL 12 FAIL-SAFE LOOP
         # -----------------------------------------------
-        for idx, item in enumerate(REPORTS_LIST):
-            try:
-                report_url = item['url']
-                tab_name = item['tab']
-                table_title = item['title']
-                filename = item['filename']
-                report_type = item.get('type', 'standard')
+        try:
+            for idx, item in enumerate(REPORTS_LIST):
+                try:
+                    report_url = item['url']
+                    tab_name = item['tab']
+                    table_title = item['title']
+                    filename = item['filename']
+                    report_type = item.get('type', 'standard')
 
-                file_path = os.path.join(TARGET_DIR, filename)
-                print(f'\\n======================================================', flush=True)
-                print(f'--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
+                    file_path = os.path.join(TARGET_DIR, filename)
+                    print(f'\\n======================================================', flush=True)
+                    print(f'--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
 
-                # --- INSTANTLY KILL 'UNSAVED CHANGES' ZOHO POPUPS ---
-                try: page.evaluate(\"window.onbeforeunload = null;\")
-                except: pass
+                    # --- INSTANTLY KILL 'UNSAVED CHANGES' ZOHO POPUPS ---
+                    try: page.evaluate(\"window.onbeforeunload = null;\")
+                    except: pass
 
-                page.goto(report_url, wait_until='domcontentloaded')
-                page.wait_for_timeout(15000) 
-                
-                apply_filter('SZM:', 'Gursewak Singh')
-
-                if report_type == 'custom_filter':
-                    if 'client_tag' in item: apply_filter('client_tags:', item['client_tag'])
-                    if 'payment_mode' in item: apply_filter('payment_mode:', item['payment_mode'])
-                    if 'client' in item: apply_filter('client:', item['client'])
-
-                if 'sort_column' in item:
-                    apply_sort(item['sort_column'])
+                    page.goto(report_url, wait_until='domcontentloaded')
+                    page.wait_for_timeout(15000) 
                     
-                page.wait_for_timeout(5000)
+                    apply_filter('SZM:', 'Gursewak Singh')
 
-                # -----------------------------------------------
-                # STRICT SIZE-AWARE CROPPING ENGINE (XPATH)
-                # -----------------------------------------------
-                find_and_scroll_js = r'''(title) => {
-                    try {
-                        let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        let matches = [];
-                        for(let i=0; i<iter.snapshotLength; i++) {
-                            let el = iter.snapshotItem(i);
-                            if(el.offsetHeight > 0) matches.push(el);
-                        }
-                        matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                        for (let match of matches) {
-                            let container = match;
-                            while (container && container.parentElement) {
-                                if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                    container.scrollIntoView({behavior: 'instant', block: 'center'});
-                                    return true;
-                                }
-                                container = container.parentElement;
+                    if report_type == 'custom_filter':
+                        if 'client_tag' in item: apply_filter('client_tags:', item['client_tag'])
+                        if 'payment_mode' in item: apply_filter('payment_mode:', item['payment_mode'])
+                        if 'client' in item: apply_filter('client:', item['client'])
+
+                    if 'sort_column' in item:
+                        apply_sort(item['sort_column'])
+                        
+                    page.wait_for_timeout(5000)
+
+                    # -----------------------------------------------
+                    # STRICT SIZE-AWARE CROPPING ENGINE (XPATH)
+                    # -----------------------------------------------
+                    find_and_scroll_js = r'''(title) => {
+                        try {
+                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                            let matches = [];
+                            for(let i=0; i<iter.snapshotLength; i++) {
+                                let el = iter.snapshotItem(i);
+                                if(el.offsetHeight > 0) matches.push(el);
                             }
-                        }
-                    } catch(e){}
-                    return false;
-                }'''
-                
-                for f in page.frames:
-                    if f.is_detached(): continue
-                    try:
-                        if f.evaluate(find_and_scroll_js, table_title): break
-                    except: pass
-                
-                page.wait_for_timeout(3000)
-
-                find_and_crop_js = r'''(title) => {
-                    try {
-                        let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        let matches = [];
-                        for(let i=0; i<iter.snapshotLength; i++) {
-                            let el = iter.snapshotItem(i);
-                            if(el.offsetHeight > 0) matches.push(el);
-                        }
-                        matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                        for (let match of matches) {
-                            let container = match;
-                            while (container && container.parentElement) {
-                                if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                    let rect = container.getBoundingClientRect();
-                                    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
+                            for (let match of matches) {
+                                let container = match;
+                                while (container && container.parentElement) {
+                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                        container.scrollIntoView({behavior: 'instant', block: 'center'});
+                                        return true;
+                                    }
+                                    container = container.parentElement;
                                 }
-                                container = container.parentElement;
                             }
-                        }
-                    } catch(e){}
-                    return null;
-                }'''
+                        } catch(e){}
+                        return false;
+                    }'''
+                    
+                    for f in page.frames:
+                        if f.is_detached(): continue
+                        try:
+                            if f.evaluate(find_and_scroll_js, table_title): break
+                        except: pass
+                    
+                    page.wait_for_timeout(3000)
 
-                crop_box = None
-                for f in page.frames:
-                    if f.is_detached(): continue
-                    try:
-                        raw_rect = f.evaluate(find_and_crop_js, table_title)
-                        if raw_rect:
-                            offset_x = 0
-                            offset_y = 0
-                            
-                            if f != page.main_frame:
-                                try:
-                                    f_box = f.frame_element().bounding_box()
-                                    if f_box:
-                                        offset_x = f_box['x']
-                                        offset_y = f_box['y']
-                                except: pass
+                    find_and_crop_js = r'''(title) => {
+                        try {
+                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                            let matches = [];
+                            for(let i=0; i<iter.snapshotLength; i++) {
+                                let el = iter.snapshotItem(i);
+                                if(el.offsetHeight > 0) matches.push(el);
+                            }
+                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
+                            for (let match of matches) {
+                                let container = match;
+                                while (container && container.parentElement) {
+                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                        let rect = container.getBoundingClientRect();
+                                        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                                    }
+                                    container = container.parentElement;
+                                }
+                            }
+                        } catch(e){}
+                        return null;
+                    }'''
 
-                            vw = page.evaluate('window.innerWidth')
-                            vh = page.evaluate('window.innerHeight')
-                            
-                            x = max(0, raw_rect['x'] + offset_x)
-                            y = max(0, raw_rect['y'] + offset_y)
-                            width = min(raw_rect['width'], vw - x)
-                            height = min(raw_rect['height'], vh - y)
-                            
-                            crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
-                            break
+                    crop_box = None
+                    for f in page.frames:
+                        if f.is_detached(): continue
+                        try:
+                            raw_rect = f.evaluate(find_and_crop_js, table_title)
+                            if raw_rect:
+                                offset_x = 0
+                                offset_y = 0
+                                
+                                if f != page.main_frame:
+                                    try:
+                                        f_box = f.frame_element().bounding_box()
+                                        if f_box:
+                                            offset_x = f_box['x']
+                                            offset_y = f_box['y']
+                                    except: pass
+
+                                vw = page.evaluate('window.innerWidth')
+                                vh = page.evaluate('window.innerHeight')
+                                
+                                x = max(0, raw_rect['x'] + offset_x)
+                                y = max(0, raw_rect['y'] + offset_y)
+                                width = min(raw_rect['width'], vw - x)
+                                height = min(raw_rect['height'], vh - y)
+                                
+                                crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
+                                break
+                        except: pass
+
+                    if crop_box and crop_box['valid']:
+                        page.screenshot(path=file_path, clip={'x': crop_box['x'], 'y': crop_box['y'], 'width': crop_box['width'], 'height': crop_box['height']})
+                        status = f'CROPPED ({int(crop_box[\"width\"])})x({int(crop_box[\"height\"])})'
+                    else:
+                        page.screenshot(path=file_path, full_page=False)
+                        status = 'FULL VIEWPORT (Fallback)'
+
+                    captured_results.append({
+                        'index': idx + 1, 'tab': tab_name, 'title': table_title, 'file': filename, 'path': file_path, 'status': status
+                    })
+                    print(f'Saved to Downloads: {filename} -> {status}', flush=True)
+
+                except Exception as e:
+                    print(f'      [!] Report {idx+1} failed catastrophically: {e}', flush=True)
+                    try: page.screenshot(path=file_path, full_page=False)
                     except: pass
-
-                if crop_box and crop_box['valid']:
-                    page.screenshot(path=file_path, clip={'x': crop_box['x'], 'y': crop_box['y'], 'width': crop_box['width'], 'height': crop_box['height']})
-                    status = f'CROPPED ({int(crop_box[\"width\"])})x({int(crop_box[\"height\"])})'
-                else:
-                    page.screenshot(path=file_path, full_page=False)
-                    status = 'FULL VIEWPORT (Fallback)'
-
-                captured_results.append({
-                    'index': idx + 1, 'tab': tab_name, 'title': table_title, 'file': filename, 'path': file_path, 'status': status
-                })
-                print(f'Saved to Downloads: {filename} -> {status}', flush=True)
-
-            except Exception as e:
-                # LEVEL 11 FAIL-SAFE: If a report crashes, log the error, take a fallback screenshot, and move to the next report.
-                print(f'      [!] Report {idx+1} failed catastrophically: {e}', flush=True)
-                try: page.screenshot(path=file_path, full_page=False)
-                except: pass
-                captured_results.append({
-                    'index': idx + 1, 'tab': tab_name, 'title': table_title, 'file': filename, 'path': file_path, 'status': 'FAILED (Fallback)'
-                })
-
+                    captured_results.append({
+                        'index': idx + 1, 'tab': tab_name, 'title': table_title, 'file': filename, 'path': file_path, 'status': 'FAILED (Fallback)'
+                    })
         finally:
             context.close()
             browser.close()
