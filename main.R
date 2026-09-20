@@ -183,65 +183,52 @@ def process_reports():
         page = context.new_page()
         page.set_default_timeout(45000)
         
-        # --- CRITICAL FIX: Automatically accept 'Unsaved Changes' popups so the script doesn't freeze ---
+        # --- CRITICAL FIX: Automatically accept popups ---
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. TAB NAVIGATION LOGIC
+        # 1. LIGHTNING FAST TAB NAVIGATION (JS ONLY)
         # -----------------------------------------------
         def click_dashboard_tab(target_tab_name):
-            print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\")
+            print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\", flush=True)
             try:
-                time.sleep(4)
-                clicked = False
+                time.sleep(3)
+                # By keeping this search purely in Javascript and ensuring it's a leaf node, we bypass the loop freeze.
+                find_tab_js = '''(tabName) => {
+                    let els = Array.from(document.querySelectorAll('*'));
+                    for (let el of els) {
+                        if (el.textContent && el.textContent.trim() === tabName && el.children.length === 0) {
+                            let rect = el.getBoundingClientRect();
+                            if (rect.y >= 0 && rect.y < 250 && rect.height > 10) {
+                                el.click();
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                }'''
                 
-                # Native locator check
+                clicked = False
                 for f in [page] + page.frames:
                     if clicked: break
                     try:
-                        tabs = f.locator(f\"text='{target_tab_name}'\")
-                        for i in range(tabs.count()):
-                            if tabs.nth(i).is_visible():
-                                box = tabs.nth(i).bounding_box()
-                                if box and box['y'] < 250:
-                                    tabs.nth(i).click(force=True, timeout=5000)
-                                    print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}'\")
-                                    time.sleep(10)
-                                    clicked = True
-                                    break
+                        clicked = f.evaluate(find_tab_js, target_tab_name)
                     except: pass
                 
-                # JS fallback
-                if not clicked:
-                    for f in [page] + page.frames:
-                        if clicked: break
-                        try:
-                            clicked = f.evaluate(f'''(tabName) => {{
-                                let els = Array.from(document.querySelectorAll('*'));
-                                for(let el of els) {{
-                                    if(el.textContent && el.textContent.trim() === tabName) {{
-                                        let rect = el.getBoundingClientRect();
-                                        if(rect.y >= 0 && rect.y < 250 && rect.height > 10) {{
-                                            el.click();
-                                            return true;
-                                        }}
-                                    }}
-                                }}
-                                return false;
-                            }}''', target_tab_name)
-                            if clicked:
-                                print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}' (JS Fallback)\")
-                                time.sleep(10)
-                        except: pass
+                if clicked:
+                    print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}'\", flush=True)
+                    time.sleep(10)
+                else:
+                    print(f\"      -> Warning: Tab '{target_tab_name}' not found or already active.\", flush=True)
             except Exception as e:
-                print(f\"      [!] Tab navigation suppressed error: {e}\")
+                pass
 
 
         # -----------------------------------------------
         # COLLISION-PROOF SORTING LOGIC
         # -----------------------------------------------
         def apply_sort(column_name):
-            print(f\"\\n   -> Sorting on column: [ {column_name} ]\")
+            print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
             css = '''
             *[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; }
@@ -291,12 +278,12 @@ def process_reports():
                                         if ibox and ibox['width'] > 0:
                                             icon.click(force=True, timeout=3000)
                                             icon_clicked = True
-                                            print(\"      -> Success: Clicked the sort arrow icon directly.\")
+                                            print(\"      -> Success: Clicked the sort arrow icon directly.\", flush=True)
                                             break
                                             
                                     if not icon_clicked:
                                         th.click(position={'x': box['width'] - 6, 'y': 6}, force=True, timeout=3000)
-                                        print(\"      -> Success: Clicked absolute Top-Right corner fallback.\")
+                                        print(\"      -> Success: Clicked absolute Top-Right corner fallback.\", flush=True)
                                         
                                     time.sleep(1.5)
                                     popup = f.locator(\"text='View Underlying Data'\")
@@ -312,11 +299,11 @@ def process_reports():
                     pass
             
             if not sorted_successfully:
-                print(f\"      [!] Error: Could not locate a VISIBLE column '{column_name}' for sorting.\")
+                print(f\"      [!] Error: Could not locate a VISIBLE column '{column_name}' for sorting.\", flush=True)
 
 
         def apply_filter(filter_label, filter_value):
-            print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\")
+            print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             opened = False
             for f in [page] + page.frames:
                 try:
@@ -333,7 +320,7 @@ def process_reports():
                 if opened: break
                 
             if not opened:
-                print(f\"      [!] Error: Could not locate filter label '{filter_label}'\")
+                print(f\"      [!] Error: Could not locate filter label '{filter_label}'\", flush=True)
                 return
                 
             time.sleep(2.5)
@@ -350,30 +337,30 @@ def process_reports():
                     except: pass
                 return False
 
-            print(\"      -> Clicking 'Clear' defaults...\")
+            print(\"      -> Clicking 'Clear' defaults...\", flush=True)
             if not click_popup_btn(\"Clear\"):
                 click_popup_btn(\"Select None\")
             time.sleep(1)
 
-            print(f\"      -> Typing '{filter_value}'...\")
+            print(f\"      -> Typing '{filter_value}'...\", flush=True)
             page.keyboard.type(filter_value)
             time.sleep(1.5)
 
-            print(f\"      -> Selecting '{filter_value}' box...\")
+            print(f\"      -> Selecting '{filter_value}' box...\", flush=True)
             if not click_popup_btn(filter_value):
                 page.keyboard.press(\"ArrowDown\")
                 time.sleep(0.5)
                 page.keyboard.press(\"Space\")
             time.sleep(1)
 
-            print(\"      -> Clicking 'OK' to lock filter...\")
+            print(\"      -> Clicking 'OK' to lock filter...\", flush=True)
             if not click_popup_btn(\"OK\"):
                 if not click_popup_btn(\"Apply\"):
                     page.keyboard.press(\"Enter\")
             
             time.sleep(0.5)
             page.keyboard.press(\"Escape\") 
-            print(\"      -> Waiting 12 seconds for dashboard data to reload...\")
+            print(\"      -> Waiting 12 seconds for dashboard data to reload...\", flush=True)
             time.sleep(12) 
 
         try:
@@ -385,7 +372,7 @@ def process_reports():
                 report_type = item.get('type', 'standard')
 
                 file_path = os.path.join(TARGET_DIR, filename)
-                print(f'\\n--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---')
+                print(f'\\n--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
 
                 page.goto(report_url, wait_until='domcontentloaded')
                 time.sleep(15) 
@@ -485,10 +472,10 @@ def process_reports():
                 captured_results.append({
                     'index': idx + 1, 'tab': tab_name, 'title': table_title, 'file': filename, 'path': file_path, 'status': status
                 })
-                print(f'Saved to Downloads: {filename} -> {status}')
+                print(f'Saved to Downloads: {filename} -> {status}', flush=True)
 
         except Exception as e:
-            print('An error occurred during execution...')
+            print('An error occurred during execution...', flush=True)
             traceback.print_exc()
 
         finally:
