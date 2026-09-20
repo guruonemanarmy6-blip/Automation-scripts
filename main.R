@@ -192,12 +192,12 @@ def process_reports():
         def click_dashboard_tab(target_tab_name):
             print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\", flush=True)
             try:
-                time.sleep(3)
-                # By keeping this search purely in Javascript and ensuring it's a leaf node, we bypass the loop freeze.
+                time.sleep(4)
+                # Removed strict leaf-node check so it reliably finds the tab even with icons/formatting
                 find_tab_js = '''(tabName) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     for (let el of els) {
-                        if (el.textContent && el.textContent.trim() === tabName && el.children.length === 0) {
+                        if (el.textContent && el.textContent.trim() === tabName) {
                             let rect = el.getBoundingClientRect();
                             if (rect.y >= 0 && rect.y < 250 && rect.height > 10) {
                                 el.click();
@@ -230,13 +230,17 @@ def process_reports():
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
-            css = '''
-            *[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; }
-            th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }
-            '''
-            page.add_style_tag(content=css)
+            # Bypassed Playwright's wait engine to inject CSS instantly using pure Javascript
+            inject_css_js = '''() => {
+                let style = document.createElement('style');
+                style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
+                document.head.appendChild(style);
+            }'''
+            
+            try: page.evaluate(inject_css_js)
+            except: pass
             for fr in page.frames:
-                try: fr.add_style_tag(content=css)
+                try: fr.evaluate(inject_css_js)
                 except: pass
 
             target_clean = column_name.lower().replace(' ', '')
@@ -246,7 +250,11 @@ def process_reports():
                 if sorted_successfully: break
                 try:
                     headers = f.locator('th, [role=\"columnheader\"], td[class*=\"header\"]')
-                    for i in range(headers.count()):
+                    count = 0
+                    try: count = headers.count()
+                    except: pass
+                    
+                    for i in range(count):
                         th = headers.nth(i)
                         if th.is_visible():
                             box = th.bounding_box()
@@ -272,28 +280,34 @@ def process_reports():
                                     
                                     icon_clicked = False
                                     icons = th.locator('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]')
-                                    for j in range(icons.count() - 1, -1, -1):
+                                    icount = 0
+                                    try: icount = icons.count()
+                                    except: pass
+                                    
+                                    for j in range(icount - 1, -1, -1):
                                         icon = icons.nth(j)
                                         ibox = icon.bounding_box()
                                         if ibox and ibox['width'] > 0:
-                                            icon.click(force=True, timeout=3000)
+                                            icon.click(force=True, timeout=2000)
                                             icon_clicked = True
                                             print(\"      -> Success: Clicked the sort arrow icon directly.\", flush=True)
                                             break
                                             
                                     if not icon_clicked:
-                                        th.click(position={'x': box['width'] - 6, 'y': 6}, force=True, timeout=3000)
+                                        th.click(position={'x': box['width'] - 6, 'y': 6}, force=True, timeout=2000)
                                         print(\"      -> Success: Clicked absolute Top-Right corner fallback.\", flush=True)
                                         
                                     time.sleep(1.5)
                                     popup = f.locator(\"text='View Underlying Data'\")
-                                    if popup.count() > 0 and popup.first.is_visible():
-                                        page.keyboard.press(\"Escape\")
-                                        time.sleep(1)
-                                        th.click(position={'x': box['width'] - 4, 'y': 4}, force=True, timeout=3000)
+                                    try:
+                                        if popup.count() > 0 and popup.first.is_visible():
+                                            page.keyboard.press(\"Escape\")
+                                            time.sleep(1)
+                                            th.click(position={'x': box['width'] - 4, 'y': 4}, force=True, timeout=2000)
+                                    except: pass
 
                                     sorted_successfully = True
-                                    time.sleep(12) 
+                                    time.sleep(10) 
                                     break
                 except Exception as e:
                     pass
@@ -309,11 +323,15 @@ def process_reports():
                 try:
                     xpath = f\"//*[contains(text(), '{filter_label}')]\"
                     elements = f.locator(xpath)
-                    for i in range(elements.count() - 1, -1, -1):
+                    ecount = 0
+                    try: ecount = elements.count()
+                    except: pass
+                    
+                    for i in range(ecount - 1, -1, -1):
                         el = elements.nth(i)
                         if el.is_visible():
                             el.scroll_into_view_if_needed()
-                            el.click(position={'x': 15, 'y': 35}, force=True, timeout=5000)
+                            el.click(position={'x': 15, 'y': 35}, force=True, timeout=3000)
                             opened = True
                             break
                 except: pass
@@ -329,10 +347,14 @@ def process_reports():
                 for f in [page] + page.frames:
                     try:
                         elements = f.locator(f\"text=\\\"{btn_text}\\\"\")
-                        for i in range(elements.count() - 1, -1, -1):
+                        bcount = 0
+                        try: bcount = elements.count()
+                        except: pass
+                        
+                        for i in range(bcount - 1, -1, -1):
                             el = elements.nth(i)
                             if el.is_visible():
-                                el.click(force=True, timeout=3000)
+                                el.click(force=True, timeout=2000)
                                 return True
                     except: pass
                 return False
@@ -360,8 +382,8 @@ def process_reports():
             
             time.sleep(0.5)
             page.keyboard.press(\"Escape\") 
-            print(\"      -> Waiting 12 seconds for dashboard data to reload...\", flush=True)
-            time.sleep(12) 
+            print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
+            time.sleep(10) 
 
         try:
             for idx, item in enumerate(REPORTS_LIST):
