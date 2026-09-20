@@ -13,7 +13,6 @@ for (pkg in required_packages) {
 
 # --- 2. CONFIGURATION ---
 INSTANCE_ID <- "710722687085"
-# Pulling sensitive tokens securely from GitHub Actions Environments
 API_TOKEN <- Sys.getenv("ZOHO_API_TOKEN")
 WHATSAPP_CHAT_ID <- Sys.getenv("WHATSAPP_CHAT_ID")
 
@@ -182,23 +181,24 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. PURE JS TAB NAVIGATION
+        # 1. ULTRA-FAST XPATH TAB NAVIGATION
         # -----------------------------------------------
         def click_dashboard_tab(target_tab_name):
             print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\", flush=True)
             try:
                 page.wait_for_timeout(4000)
                 find_tab_js = r'''(tabName) => {
-                    let els = Array.from(document.querySelectorAll('*'));
-                    for (let el of els) {
-                        if (el.textContent && el.textContent.trim() === tabName) {
+                    try {
+                        let iter = document.evaluate('//*[normalize-space(text())=\"' + tabName + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        for (let i = 0; i < iter.snapshotLength; i++) {
+                            let el = iter.snapshotItem(i);
                             let rect = el.getBoundingClientRect();
-                            if (rect.y >= 0 && rect.y < 250 && rect.height > 10) {
+                            if (rect.y >= 0 && rect.y < 300 && rect.height > 5) {
                                 el.click();
                                 return true;
                             }
                         }
-                    }
+                    } catch(e){}
                     return false;
                 }'''
                 
@@ -219,7 +219,7 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # 2. PURE JS SORTING
+        # 2. XPATH FAST SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
@@ -283,8 +283,10 @@ def process_reports():
                         
                         page.wait_for_timeout(1000)
                         dismiss_js = r'''() => {
-                            let popups = Array.from(document.querySelectorAll('*')).filter(el => el.textContent === 'View Underlying Data');
-                            if(popups.length > 0) popups[0].click();
+                            try {
+                                let iter = document.evaluate('//*[text()=\"View Underlying Data\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                                if (iter.snapshotLength > 0) iter.snapshotItem(0).click();
+                            } catch(e){}
                         }'''
                         try: f.evaluate(dismiss_js)
                         except: pass
@@ -299,33 +301,29 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # 3. PURE JS FILTERING (BYPASSES PLAYWRIGHT CRASHES)
+        # 3. ULTRA-FAST XPATH FILTERING 
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
             open_filter_js = r'''(label) => {
-                let els = Array.from(document.querySelectorAll('*'));
-                for (let i = els.length - 1; i >= 0; i--) {
-                    let el = els[i];
-                    if (el.textContent && el.textContent.includes(label)) {
+                try {
+                    let iter = document.evaluate('//*[contains(text(), \"' + label + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                    for (let i = iter.snapshotLength - 1; i >= 0; i--) {
+                        let el = iter.snapshotItem(i);
                         let rect = el.getBoundingClientRect();
                         if (rect.height > 0 && rect.width > 0) {
                             el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            
-                            // Instant coordinate click logic avoiding Playwright actionability checks
                             let targetX = rect.x + 15;
                             let targetY = rect.y + 35;
                             let dropEl = document.elementFromPoint(targetX, targetY) || el;
-                            
                             dropEl.click();
                             dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
                             dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-                            dropEl.dispatchEvent(new MouseEvent('click', {bubbles:true}));
                             return true;
                         }
                     }
-                }
+                } catch(e){}
                 return false;
             }'''
             
@@ -345,14 +343,16 @@ def process_reports():
 
             def click_popup_btn(btn_text):
                 click_btn_js = r'''(text) => {
-                    let els = Array.from(document.querySelectorAll('*'));
-                    for (let i = els.length - 1; i >= 0; i--) {
-                        let el = els[i];
-                        if (el.textContent === text && el.getBoundingClientRect().height > 0) {
-                            el.click();
-                            return true;
+                    try {
+                        let iter = document.evaluate('//*[normalize-space(text())=\"' + text + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
+                            let el = iter.snapshotItem(i);
+                            if (el.getBoundingClientRect().height > 0) {
+                                el.click();
+                                return true;
+                            }
                         }
-                    }
+                    } catch(e){}
                     return false;
                 }'''
                 
@@ -417,22 +417,28 @@ def process_reports():
                 page.wait_for_timeout(5000)
 
                 # -----------------------------------------------
-                # 4. STRICT SIZE-AWARE CROPPING ENGINE
+                # 4. STRICT SIZE-AWARE CROPPING ENGINE (XPATH)
                 # -----------------------------------------------
                 find_and_scroll_js = r'''(title) => {
-                    let els = Array.from(document.querySelectorAll('*'));
-                    let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
-                    matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                    for (let match of matches) {
-                        let container = match;
-                        while (container && container.parentElement) {
-                            if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                container.scrollIntoView({behavior: 'instant', block: 'center'});
-                                return true;
-                            }
-                            container = container.parentElement;
+                    try {
+                        let iter = document.evaluate('//*[normalize-space(text())=\"' + title + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        let matches = [];
+                        for(let i=0; i<iter.snapshotLength; i++) {
+                            let el = iter.snapshotItem(i);
+                            if(el.offsetHeight > 0) matches.push(el);
                         }
-                    }
+                        matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
+                        for (let match of matches) {
+                            let container = match;
+                            while (container && container.parentElement) {
+                                if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                    container.scrollIntoView({behavior: 'instant', block: 'center'});
+                                    return true;
+                                }
+                                container = container.parentElement;
+                            }
+                        }
+                    } catch(e){}
                     return false;
                 }'''
                 
@@ -444,19 +450,25 @@ def process_reports():
                 page.wait_for_timeout(3000)
 
                 find_and_crop_js = r'''(title) => {
-                    let els = Array.from(document.querySelectorAll('*'));
-                    let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
-                    matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                    for (let match of matches) {
-                        let container = match;
-                        while (container && container.parentElement) {
-                            if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                let rect = container.getBoundingClientRect();
-                                return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-                            }
-                            container = container.parentElement;
+                    try {
+                        let iter = document.evaluate('//*[normalize-space(text())=\"' + title + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        let matches = [];
+                        for(let i=0; i<iter.snapshotLength; i++) {
+                            let el = iter.snapshotItem(i);
+                            if(el.offsetHeight > 0) matches.push(el);
                         }
-                    }
+                        matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
+                        for (let match of matches) {
+                            let container = match;
+                            while (container && container.parentElement) {
+                                if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                    let rect = container.getBoundingClientRect();
+                                    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                                }
+                                container = container.parentElement;
+                            }
+                        }
+                    } catch(e){}
                     return null;
                 }'''
 
