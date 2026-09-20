@@ -176,17 +176,18 @@ def process_reports():
             'viewport': {'width': 1920, 'height': 1080}
         }
         
-        # Inject the saved cookies into the browser context to bypass login
         if os.path.exists(AUTH_FILE) and os.path.getsize(AUTH_FILE) > 0:
-            print('Injecting saved cookies for authentication...')
             context_args['storage_state'] = AUTH_FILE
             
         context = browser.new_context(**context_args)
         page = context.new_page()
         page.set_default_timeout(45000)
+        
+        # --- CRITICAL FIX: Automatically accept 'Unsaved Changes' popups so the script doesn't freeze ---
+        page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. TAB NAVIGATION LOGIC (STRICT TOP-HEADER)
+        # 1. TAB NAVIGATION LOGIC
         # -----------------------------------------------
         def click_dashboard_tab(target_tab_name):
             print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\")
@@ -194,44 +195,46 @@ def process_reports():
                 time.sleep(4)
                 clicked = False
                 
-                # Iterate over ALL frames to handle Zoho 'open-view' links properly
+                # Native locator check
                 for f in [page] + page.frames:
                     if clicked: break
                     try:
-                        clicked = f.evaluate(f'''(tabName) => {{
-                            let els = Array.from(document.querySelectorAll('*'));
-                            for(let el of els) {{
-                                if(el.textContent && el.textContent.trim() === tabName) {{
-                                    let rect = el.getBoundingClientRect();
-                                    if(rect.y >= 0 && rect.y < 250 && rect.height > 10) {{
-                                        el.click();
-                                        return true;
-                                    }}
-                                }}
-                            }}
-                            return false;
-                        }}''', target_tab_name)
+                        tabs = f.locator(f\"text='{target_tab_name}'\")
+                        for i in range(tabs.count()):
+                            if tabs.nth(i).is_visible():
+                                box = tabs.nth(i).bounding_box()
+                                if box and box['y'] < 250:
+                                    tabs.nth(i).click(force=True, timeout=5000)
+                                    print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}'\")
+                                    time.sleep(10)
+                                    clicked = True
+                                    break
                     except: pass
                 
-                if clicked:
-                    print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}'\")
-                    time.sleep(12) 
-                else:
+                # JS fallback
+                if not clicked:
                     for f in [page] + page.frames:
                         if clicked: break
                         try:
-                            tabs = f.locator(f\"text='{target_tab_name}'\")
-                            for i in range(tabs.count()):
-                                box = tabs.nth(i).bounding_box()
-                                if box and box['y'] < 250:
-                                    tabs.nth(i).click(force=True)
-                                    print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}' (Fallback)\")
-                                    time.sleep(12)
-                                    clicked = True
-                                    break
+                            clicked = f.evaluate(f'''(tabName) => {{
+                                let els = Array.from(document.querySelectorAll('*'));
+                                for(let el of els) {{
+                                    if(el.textContent && el.textContent.trim() === tabName) {{
+                                        let rect = el.getBoundingClientRect();
+                                        if(rect.y >= 0 && rect.y < 250 && rect.height > 10) {{
+                                            el.click();
+                                            return true;
+                                        }}
+                                    }}
+                                }}
+                                return false;
+                            }}''', target_tab_name)
+                            if clicked:
+                                print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}' (JS Fallback)\")
+                                time.sleep(10)
                         except: pass
             except Exception as e:
-                pass
+                print(f\"      [!] Tab navigation suppressed error: {e}\")
 
 
         # -----------------------------------------------
@@ -286,13 +289,13 @@ def process_reports():
                                         icon = icons.nth(j)
                                         ibox = icon.bounding_box()
                                         if ibox and ibox['width'] > 0:
-                                            icon.click(force=True)
+                                            icon.click(force=True, timeout=3000)
                                             icon_clicked = True
                                             print(\"      -> Success: Clicked the sort arrow icon directly.\")
                                             break
                                             
                                     if not icon_clicked:
-                                        th.click(position={'x': box['width'] - 6, 'y': 6}, force=True)
+                                        th.click(position={'x': box['width'] - 6, 'y': 6}, force=True, timeout=3000)
                                         print(\"      -> Success: Clicked absolute Top-Right corner fallback.\")
                                         
                                     time.sleep(1.5)
@@ -300,7 +303,7 @@ def process_reports():
                                     if popup.count() > 0 and popup.first.is_visible():
                                         page.keyboard.press(\"Escape\")
                                         time.sleep(1)
-                                        th.click(position={'x': box['width'] - 4, 'y': 4}, force=True)
+                                        th.click(position={'x': box['width'] - 4, 'y': 4}, force=True, timeout=3000)
 
                                     sorted_successfully = True
                                     time.sleep(12) 
@@ -323,7 +326,7 @@ def process_reports():
                         el = elements.nth(i)
                         if el.is_visible():
                             el.scroll_into_view_if_needed()
-                            el.click(position={'x': 15, 'y': 35}, force=True)
+                            el.click(position={'x': 15, 'y': 35}, force=True, timeout=5000)
                             opened = True
                             break
                 except: pass
@@ -342,7 +345,7 @@ def process_reports():
                         for i in range(elements.count() - 1, -1, -1):
                             el = elements.nth(i)
                             if el.is_visible():
-                                el.click(force=True)
+                                el.click(force=True, timeout=3000)
                                 return True
                     except: pass
                 return False
@@ -401,10 +404,8 @@ def process_reports():
                 time.sleep(5)
 
                 # -----------------------------------------------
-                # 2. STRICT SIZE-AWARE CROPPING ENGINE (FIXED)
+                # 2. STRICT SIZE-AWARE CROPPING ENGINE
                 # -----------------------------------------------
-                
-                # Script logic to execute inside frames independently
                 find_and_scroll_js = '''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
@@ -422,15 +423,13 @@ def process_reports():
                     return false;
                 }'''
                 
-                # STEP A: Safely search ALL iframes using Playwright instead of relying on DOM (fixes CORS)
                 for f in [page] + page.frames:
                     try:
                         if f.evaluate(find_and_scroll_js, table_title): break
                     except: pass
                 
-                time.sleep(3) # Give browser time to settle scroll layout
+                time.sleep(3)
 
-                # Script logic to return coordinates from the frame
                 find_and_crop_js = '''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
@@ -448,7 +447,6 @@ def process_reports():
                     return null;
                 }'''
 
-                # STEP B: Find coordinates and calculate exact iframe spatial offsets
                 crop_box = None
                 for f in [page] + page.frames:
                     try:
@@ -457,7 +455,6 @@ def process_reports():
                             offset_x = 0
                             offset_y = 0
                             
-                            # If it's an iframe, we need to add its coordinates to the cropped object
                             if f != page and f != page.main_frame:
                                 try:
                                     f_box = f.frame_element().bounding_box()
@@ -506,7 +503,6 @@ process_reports()
 
 # --- 6. WHATSAPP SENDING FUNCTION ---
 send_to_whatsapp <- function(file_path, title) {
-  # Skip sending if token is missing (prevents crashes during setup/testing)
   if (!nzchar(API_TOKEN) || !nzchar(WHATSAPP_CHAT_ID)) {
     message("   -> [SKIPPED] Missing WhatsApp API credentials in GitHub Secrets.")
     return()
@@ -533,7 +529,6 @@ send_to_whatsapp <- function(file_path, title) {
 }
 
 # --- 7. EXECUTION & WHATSAPP DISTRIBUTION ---
-
 job <- function() {
   message(sprintf("\n==========================================="))
   message(sprintf("STARTING REPORT CAPTURE AT %s", Sys.time()))
@@ -567,6 +562,4 @@ job <- function() {
 }
 
 # --- 8. TRIGGER EXECUTION ---
-# Note: GitHub Actions handles the hourly scheduling (via the cron trigger in the YAML).
-# We only need to run the script once per execution.
 job()
