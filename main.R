@@ -13,7 +13,7 @@ for (pkg in required_packages) {
 
 # --- 2. CONFIGURATION ---
 INSTANCE_ID <- "710722687085"
-# SECURE CLOUD FETCH: Never hardcode tokens in the script!
+# Pulling sensitive tokens securely from GitHub Actions Environments
 API_TOKEN <- Sys.getenv("ZOHO_API_TOKEN")
 WHATSAPP_CHAT_ID <- Sys.getenv("WHATSAPP_CHAT_ID")
 
@@ -33,7 +33,7 @@ if (!dir.exists(downloads_folder)) {
   downloads_folder <- file.path(Sys.getenv("HOME"), "Downloads")
 }
 
-# --- Reports Configuration (Updated with your 13 items) ---
+# --- Reports Configuration ---
 reports_config <- list(
   list(
     type = "standard",
@@ -198,44 +198,7 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. ULTRA-FAST XPATH TAB NAVIGATION
-        # -----------------------------------------------
-        def click_dashboard_tab(target_tab_name):
-            print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\", flush=True)
-            try:
-                page.wait_for_timeout(4000)
-                find_tab_js = r'''(tabName) => {
-                    try {
-                        let iter = document.evaluate('//*[normalize-space(text())=\"' + tabName + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        for (let i = 0; i < iter.snapshotLength; i++) {
-                            let el = iter.snapshotItem(i);
-                            let rect = el.getBoundingClientRect();
-                            if (rect.y >= 0 && rect.y < 300 && rect.height > 5) {
-                                el.click();
-                                return true;
-                            }
-                        }
-                    } catch(e){}
-                    return false;
-                }'''
-                
-                clicked = False
-                for f in [page] + page.frames:
-                    if clicked: break
-                    try:
-                        clicked = f.evaluate(find_tab_js, target_tab_name)
-                    except: pass
-                
-                if clicked:
-                    print(f\"      -> Success: Clicked dashboard tab '{target_tab_name}'\", flush=True)
-                    page.wait_for_timeout(10000)
-                else:
-                    print(f\"      -> Warning: Tab '{target_tab_name}' not found or already active.\", flush=True)
-            except Exception as e:
-                pass
-
-        # -----------------------------------------------
-        # 2. XPATH FAST SORTING
+        # 1. XPATH FAST SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
@@ -249,6 +212,7 @@ def process_reports():
             try: page.evaluate(inject_css_js)
             except: pass
             for fr in page.frames:
+                if fr.is_detached(): continue
                 try: fr.evaluate(inject_css_js)
                 except: pass
 
@@ -290,6 +254,7 @@ def process_reports():
 
             sorted_successfully = False
             for f in [page] + page.frames:
+                if f.is_detached(): continue
                 if sorted_successfully: break
                 try:
                     res = f.evaluate(sort_js, column_name)
@@ -316,7 +281,7 @@ def process_reports():
                 print(f\"      [!] Error: Javascript could not locate column '{column_name}' for sorting.\", flush=True)
 
         # -----------------------------------------------
-        # 3. ULTRA-FAST XPATH FILTERING 
+        # 2. ULTRA-FAST XPATH FILTERING 
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
@@ -344,6 +309,7 @@ def process_reports():
             
             opened = False
             for f in [page] + page.frames:
+                if f.is_detached(): continue
                 if opened: break
                 try:
                     if f.evaluate(open_filter_js, filter_label):
@@ -359,7 +325,7 @@ def process_reports():
             def click_popup_btn(btn_text):
                 click_btn_js = r'''(text) => {
                     try {
-                        let iter = document.evaluate('//*[normalize-space(text())=\"' + text + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        let iter = document.evaluate('//*[text()=\"' + text + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                         for (let i = iter.snapshotLength - 1; i >= 0; i--) {
                             let el = iter.snapshotItem(i);
                             if (el.getBoundingClientRect().height > 0) {
@@ -372,6 +338,7 @@ def process_reports():
                 }'''
                 
                 for f in [page] + page.frames:
+                    if f.is_detached(): continue
                     try:
                         if f.evaluate(click_btn_js, btn_text):
                             return True
@@ -415,10 +382,15 @@ def process_reports():
                 file_path = os.path.join(TARGET_DIR, filename)
                 print(f'\\n--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
 
+                # --- INSTANTLY KILL 'UNSAVED CHANGES' ZOHO POPUPS ---
+                try: page.evaluate(\"window.onbeforeunload = null;\")
+                except: pass
+
                 page.goto(report_url, wait_until='domcontentloaded')
                 page.wait_for_timeout(15000) 
-
-                click_dashboard_tab(tab_name)
+                
+                # --- REDUNDANT TAB CLICK ENGINE DELETED ENTIRELY ---
+                
                 apply_filter('SZM:', 'Gursewak Singh')
 
                 if report_type == 'custom_filter':
@@ -432,11 +404,11 @@ def process_reports():
                 page.wait_for_timeout(5000)
 
                 # -----------------------------------------------
-                # 4. STRICT SIZE-AWARE CROPPING ENGINE (XPATH)
+                # 3. STRICT SIZE-AWARE CROPPING ENGINE (XPATH)
                 # -----------------------------------------------
                 find_and_scroll_js = r'''(title) => {
                     try {
-                        let iter = document.evaluate('//*[normalize-space(text())=\"' + title + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                         let matches = [];
                         for(let i=0; i<iter.snapshotLength; i++) {
                             let el = iter.snapshotItem(i);
@@ -458,6 +430,7 @@ def process_reports():
                 }'''
                 
                 for f in [page] + page.frames:
+                    if f.is_detached(): continue
                     try:
                         if f.evaluate(find_and_scroll_js, table_title): break
                     except: pass
@@ -466,7 +439,7 @@ def process_reports():
 
                 find_and_crop_js = r'''(title) => {
                     try {
-                        let iter = document.evaluate('//*[normalize-space(text())=\"' + title + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                         let matches = [];
                         for(let i=0; i<iter.snapshotLength; i++) {
                             let el = iter.snapshotItem(i);
@@ -489,6 +462,7 @@ def process_reports():
 
                 crop_box = None
                 for f in [page] + page.frames:
+                    if f.is_detached(): continue
                     try:
                         raw_rect = f.evaluate(find_and_crop_js, table_title)
                         if raw_rect:
@@ -601,6 +575,4 @@ job <- function() {
   message(sprintf("Capture and Distribution Cycle Complete at %s.", Sys.time()))
 }
 
-# DO NOT USE AN INFINITE LOOP (repeat { Sys.sleep(3600) }) HERE. 
-# It will crash GitHub Actions. The YAML file controls the hourly schedule.
 job()
