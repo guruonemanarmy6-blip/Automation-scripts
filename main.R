@@ -277,7 +277,12 @@ def process_reports():
                     if res:
                         time.sleep(1)
                         target = f.locator('[data-pw-sort=\"true\"]')
-                        target.hover(force=True)
+                        
+                        # Added strict timeout to prevent 45-second freezes
+                        try:
+                            target.hover(force=True, timeout=2000)
+                        except: pass
+                        
                         time.sleep(1)
                         
                         icon = target.locator('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]').last
@@ -290,8 +295,10 @@ def process_reports():
                         except: pass
                         
                         if not icon_clicked:
-                            target.click(position={'x': res['width'] - 6, 'y': 6}, force=True, timeout=2000)
-                            print(\"      -> Success: Clicked absolute Top-Right corner fallback.\", flush=True)
+                            try:
+                                target.click(position={'x': res['width'] - 6, 'y': 6}, force=True, timeout=2000)
+                                print(\"      -> Success: Clicked absolute Top-Right corner fallback.\", flush=True)
+                            except: pass
                             
                         time.sleep(1.5)
                         try:
@@ -302,7 +309,10 @@ def process_reports():
                                 target.click(position={'x': res['width'] - 4, 'y': 4}, force=True, timeout=2000)
                         except: pass
                         
-                        f.evaluate('''document.querySelector('[data-pw-sort=\"true\"]').removeAttribute('data-pw-sort')''')
+                        try:
+                            f.evaluate('''document.querySelector('[data-pw-sort=\"true\"]').removeAttribute('data-pw-sort')''')
+                        except: pass
+                        
                         sorted_successfully = True
                         time.sleep(10)
                         break
