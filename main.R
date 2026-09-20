@@ -13,7 +13,6 @@ for (pkg in required_packages) {
 
 # --- 2. CONFIGURATION ---
 INSTANCE_ID <- "710722687085"
-# Pulling sensitive tokens securely from GitHub Actions Environments
 API_TOKEN <- Sys.getenv("ZOHO_API_TOKEN")
 WHATSAPP_CHAT_ID <- Sys.getenv("WHATSAPP_CHAT_ID")
 
@@ -193,7 +192,7 @@ def process_reports():
             
         context = browser.new_context(**context_args)
         page = context.new_page()
-        page.set_default_timeout(45000)
+        page.set_default_timeout(60000) # Increased base timeout
         
         page.on('dialog', lambda dialog: dialog.accept())
 
@@ -211,8 +210,9 @@ def process_reports():
             
             try: page.evaluate(inject_css_js)
             except: pass
-            for fr in page.frames:
-                try: fr.evaluate(inject_css_js)
+            for f in page.frames:
+                try: 
+                    if not f.is_detached(): f.evaluate(inject_css_js)
                 except: pass
 
             sort_js = r'''(colName) => {
@@ -236,31 +236,32 @@ def process_reports():
                         
                         if (match) {
                             el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            let icon = el.querySelector('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]');
-                            if (icon) {
-                                icon.scrollIntoView({behavior: 'instant', block: 'center'});
-                                icon.click();
-                                return 'icon_clicked';
-                            } else {
-                                el.click();
-                                return 'th_clicked';
-                            }
+                            el.setAttribute('data-pw-sort', 'true');
+                            return {width: rect.width, x: rect.x, y: rect.y};
                         }
                     }
                 }
-                return 'not_found';
+                return null;
             }'''
 
             sorted_successfully = False
-            for f in [page] + page.frames:
+            for f in page.frames:
+                if f.is_detached(): continue
                 if sorted_successfully: break
                 try:
                     res = f.evaluate(sort_js, column_name)
-                    if res in ['icon_clicked', 'th_clicked']:
-                        print(f\"      -> Success: Javascript forcefully executed sort action ({res}).\", flush=True)
+                    if res:
+                        page.wait_for_timeout(1000)
+                        
+                        # Use raw coordinate click to bypass Playwright's element visibility traps
+                        targetX = res['x'] + res['width'] - 10
+                        targetY = res['y'] + 10
+                        page.mouse.click(targetX, targetY)
+                        
+                        print(f\"      -> Success: Triggered sort logic.\", flush=True)
                         sorted_successfully = True
                         
-                        page.wait_for_timeout(1000)
+                        page.wait_for_timeout(1500)
                         dismiss_js = r'''() => {
                             try {
                                 let iter = document.evaluate('//*[text()=\"View Underlying Data\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
@@ -276,7 +277,7 @@ def process_reports():
                     pass
             
             if not sorted_successfully:
-                print(f\"      [!] Error: Javascript could not locate column '{column_name}' for sorting.\", flush=True)
+                print(f\"      [!] Warning: Could not explicitly sort column '{column_name}'. Proceeding with default view.\", flush=True)
 
         # -----------------------------------------------
         # 2. ULTRA-FAST XPATH FILTERING 
@@ -292,29 +293,26 @@ def process_reports():
                         let rect = el.getBoundingClientRect();
                         if (rect.height > 0 && rect.width > 0) {
                             el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            let targetX = rect.x + 15;
-                            let targetY = rect.y + 35;
-                            let dropEl = document.elementFromPoint(targetX, targetY) || el;
-                            dropEl.click();
-                            dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
-                            dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-                            return true;
+                            return {x: rect.x + 15, y: rect.y + 35};
                         }
                     }
                 } catch(e){}
-                return false;
+                return null;
             }'''
             
             opened = False
-            for f in [page] + page.frames:
+            for f in page.frames:
+                if f.is_detached(): continue
                 if opened: break
                 try:
-                    if f.evaluate(open_filter_js, filter_label):
+                    coords = f.evaluate(open_filter_js, filter_label)
+                    if coords:
+                        page.mouse.click(coords['x'], coords['y'])
                         opened = True
                 except: pass
                 
             if not opened:
-                print(f\"      [!] Error: Could not locate filter label '{filter_label}'\", flush=True)
+                print(f\"      [!] Warning: Could not locate filter label '{filter_label}'. Skipping filter.\", flush=True)
                 return
                 
             page.wait_for_timeout(2500)
@@ -325,18 +323,21 @@ def process_reports():
                         let iter = document.evaluate('//*[text()=\"' + text + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                         for (let i = iter.snapshotLength - 1; i >= 0; i--) {
                             let el = iter.snapshotItem(i);
-                            if (el.getBoundingClientRect().height > 0) {
-                                el.click();
-                                return true;
+                            let rect = el.getBoundingClientRect();
+                            if (rect.height > 0) {
+                                return {x: rect.x + (rect.width/2), y: rect.y + (rect.height/2)};
                             }
                         }
                     } catch(e){}
-                    return false;
+                    return null;
                 }'''
                 
-                for f in [page] + page.frames:
+                for f in page.frames:
+                    if f.is_detached(): continue
                     try:
-                        if f.evaluate(click_btn_js, btn_text):
+                        coords = f.evaluate(click_btn_js, btn_text)
+                        if coords:
+                            page.mouse.click(coords['x'], coords['y'])
                             return True
                     except: pass
                 return False
@@ -367,8 +368,12 @@ def process_reports():
             print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
             page.wait_for_timeout(10000) 
 
-        try:
-            for idx, item in enumerate(REPORTS_LIST):
+
+        # -----------------------------------------------
+        # THE LEVEL 11 FAIL-SAFE LOOP
+        # -----------------------------------------------
+        for idx, item in enumerate(REPORTS_LIST):
+            try:
                 report_url = item['url']
                 tab_name = item['tab']
                 table_title = item['title']
@@ -376,7 +381,8 @@ def process_reports():
                 report_type = item.get('type', 'standard')
 
                 file_path = os.path.join(TARGET_DIR, filename)
-                print(f'\\n--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
+                print(f'\\n======================================================', flush=True)
+                print(f'--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
 
                 # --- INSTANTLY KILL 'UNSAVED CHANGES' ZOHO POPUPS ---
                 try: page.evaluate(\"window.onbeforeunload = null;\")
@@ -398,7 +404,7 @@ def process_reports():
                 page.wait_for_timeout(5000)
 
                 # -----------------------------------------------
-                # 3. STRICT SIZE-AWARE CROPPING ENGINE (XPATH)
+                # STRICT SIZE-AWARE CROPPING ENGINE (XPATH)
                 # -----------------------------------------------
                 find_and_scroll_js = r'''(title) => {
                     try {
@@ -423,7 +429,8 @@ def process_reports():
                     return false;
                 }'''
                 
-                for f in [page] + page.frames:
+                for f in page.frames:
+                    if f.is_detached(): continue
                     try:
                         if f.evaluate(find_and_scroll_js, table_title): break
                     except: pass
@@ -454,14 +461,15 @@ def process_reports():
                 }'''
 
                 crop_box = None
-                for f in [page] + page.frames:
+                for f in page.frames:
+                    if f.is_detached(): continue
                     try:
                         raw_rect = f.evaluate(find_and_crop_js, table_title)
                         if raw_rect:
                             offset_x = 0
                             offset_y = 0
                             
-                            if f != page and f != page.main_frame:
+                            if f != page.main_frame:
                                 try:
                                     f_box = f.frame_element().bounding_box()
                                     if f_box:
@@ -493,9 +501,14 @@ def process_reports():
                 })
                 print(f'Saved to Downloads: {filename} -> {status}', flush=True)
 
-        except Exception as e:
-            print('An error occurred during execution...', flush=True)
-            traceback.print_exc()
+            except Exception as e:
+                # LEVEL 11 FAIL-SAFE: If a report crashes, log the error, take a fallback screenshot, and move to the next report.
+                print(f'      [!] Report {idx+1} failed catastrophically: {e}', flush=True)
+                try: page.screenshot(path=file_path, full_page=False)
+                except: pass
+                captured_results.append({
+                    'index': idx + 1, 'tab': tab_name, 'title': table_title, 'file': filename, 'path': file_path, 'status': 'FAILED (Fallback)'
+                })
 
         finally:
             context.close()
