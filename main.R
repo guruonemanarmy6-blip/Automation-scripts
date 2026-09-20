@@ -182,17 +182,16 @@ def process_reports():
         page = context.new_page()
         page.set_default_timeout(45000)
         
-        # --- Automatically accept popups ---
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. LIGHTNING FAST TAB NAVIGATION (JS ONLY)
+        # 1. PURE JS TAB NAVIGATION
         # -----------------------------------------------
         def click_dashboard_tab(target_tab_name):
             print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\", flush=True)
             try:
                 time.sleep(4)
-                find_tab_js = r'''(tabName) => {
+                find_tab_js = '''(tabName) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     for (let el of els) {
                         if (el.textContent && el.textContent.trim() === tabName) {
@@ -223,12 +222,12 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # 2. LIGHTNING FAST SORTING (TAG & STRIKE METHOD)
+        # 2. PURE JS SORTING (BYPASSES PLAYWRIGHT TIMEOUTS)
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
-            inject_css_js = r'''() => {
+            inject_css_js = '''() => {
                 let style = document.createElement('style');
                 style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
                 document.head.appendChild(style);
@@ -240,96 +239,75 @@ def process_reports():
                 try: fr.evaluate(inject_css_js)
                 except: pass
 
-            tag_col_js = r'''(targetCol) => {
-                let targetClean = targetCol.toLowerCase().replace(/\\s/g, '');
+            sort_js = '''(colName) => {
+                let cleanName = colName.toLowerCase().split(' ').join('');
                 let els = Array.from(document.querySelectorAll('th, [role=\"columnheader\"], td[class*=\"header\"]'));
                 for (let el of els) {
                     let rect = el.getBoundingClientRect();
                     if (rect.height > 10 && rect.width > 20 && rect.y > 45) {
-                        let rawText = (el.getAttribute('title') || '') + ' ' + (el.innerText || '');
-                        let actualClean = rawText.replace(/\\s/g, '').toLowerCase();
+                        let text = (el.getAttribute('title') || '') + ' ' + (el.innerText || '');
+                        let cleanText = text.toLowerCase().split(' ').join('');
                         
                         let match = false;
-                        if (actualClean.includes(targetClean)) {
-                            if (actualClean.includes('zero') && !targetClean.includes('zero')) match = false;
-                            else if (actualClean.includes('d2') && !targetClean.includes('d2')) match = false;
-                            else if (actualClean.includes('d6') && !targetClean.includes('d6')) match = false;
+                        if (cleanText.includes(cleanName)) {
+                            if (cleanText.includes('zero') && !cleanName.includes('zero')) match = false;
+                            else if (cleanText.includes('d2') && !cleanName.includes('d2')) match = false;
+                            else if (cleanText.includes('d6') && !cleanName.includes('d6')) match = false;
                             else match = true;
-                        } else if (actualClean.length >= 5 && actualClean.startsWith(targetClean)) {
+                        } else if (cleanText.length >= 5 && cleanText.startsWith(cleanName)) {
                             match = true;
                         }
                         
                         if (match) {
                             el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            el.setAttribute('data-pw-sort', 'true');
-                            return {width: rect.width};
+                            let icon = el.querySelector('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]');
+                            if (icon) {
+                                icon.scrollIntoView({behavior: 'instant', block: 'center'});
+                                icon.click();
+                                return 'icon_clicked';
+                            } else {
+                                el.click();
+                                return 'th_clicked';
+                            }
                         }
                     }
                 }
-                return null;
+                return 'not_found';
             }'''
 
             sorted_successfully = False
             for f in [page] + page.frames:
                 if sorted_successfully: break
                 try:
-                    res = f.evaluate(tag_col_js, column_name)
-                    if res:
-                        time.sleep(1)
-                        target = f.locator('[data-pw-sort=\"true\"]')
-                        
-                        # Added strict timeout to prevent 45-second freezes
-                        try:
-                            target.hover(force=True, timeout=2000)
-                        except: pass
-                        
-                        time.sleep(1)
-                        
-                        icon = target.locator('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]').last
-                        icon_clicked = False
-                        try:
-                            if icon.is_visible():
-                                icon.click(force=True, timeout=2000)
-                                icon_clicked = True
-                                print(\"      -> Success: Clicked the sort arrow icon directly.\", flush=True)
-                        except: pass
-                        
-                        if not icon_clicked:
-                            try:
-                                target.click(position={'x': res['width'] - 6, 'y': 6}, force=True, timeout=2000)
-                                print(\"      -> Success: Clicked absolute Top-Right corner fallback.\", flush=True)
-                            except: pass
-                            
-                        time.sleep(1.5)
-                        try:
-                            popup = f.locator(\"text='View Underlying Data'\")
-                            if popup.count() > 0 and popup.first.is_visible():
-                                page.keyboard.press(\"Escape\")
-                                time.sleep(1)
-                                target.click(position={'x': res['width'] - 4, 'y': 4}, force=True, timeout=2000)
-                        except: pass
-                        
-                        try:
-                            f.evaluate('''document.querySelector('[data-pw-sort=\"true\"]').removeAttribute('data-pw-sort')''')
-                        except: pass
-                        
+                    res = f.evaluate(sort_js, column_name)
+                    if res in ['icon_clicked', 'th_clicked']:
+                        print(f\"      -> Success: Javascript forcefully executed sort action ({res}).\", flush=True)
                         sorted_successfully = True
+                        
+                        time.sleep(1)
+                        dismiss_js = '''() => {
+                            let popups = Array.from(document.querySelectorAll('*')).filter(el => el.textContent === 'View Underlying Data');
+                            if(popups.length > 0) popups[0].click();
+                        }'''
+                        try: f.evaluate(dismiss_js)
+                        except: pass
+                        
                         time.sleep(10)
                         break
                 except Exception as e:
                     pass
             
             if not sorted_successfully:
-                print(f\"      [!] Error: Could not locate a VISIBLE column '{column_name}' for sorting.\", flush=True)
+                print(f\"      [!] Error: Javascript could not locate column '{column_name}' for sorting.\", flush=True)
 
 
         # -----------------------------------------------
-        # 3. LIGHTNING FAST FILTERING (TAG & STRIKE METHOD)
+        # 3. PURE JS FILTERING
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
-            tag_filter_js = r'''(label) => {
+            open_filter_js = '''(label) => {
                 let els = Array.from(document.querySelectorAll('*'));
                 for (let i = els.length - 1; i >= 0; i--) {
                     let el = els[i];
@@ -337,7 +315,7 @@ def process_reports():
                         let rect = el.getBoundingClientRect();
                         if (rect.height > 0 && rect.width > 0) {
                             el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            el.setAttribute('data-pw-filter', 'true');
+                            el.click();
                             return true;
                         }
                     }
@@ -349,10 +327,7 @@ def process_reports():
             for f in [page] + page.frames:
                 if opened: break
                 try:
-                    if f.evaluate(tag_filter_js, filter_label):
-                        target = f.locator('[data-pw-filter=\"true\"]')
-                        target.click(position={'x': 15, 'y': 35}, force=True, timeout=3000)
-                        f.evaluate('''document.querySelector('[data-pw-filter=\"true\"]').removeAttribute('data-pw-filter')''')
+                    if f.evaluate(open_filter_js, filter_label):
                         opened = True
                 except: pass
                 
@@ -363,12 +338,12 @@ def process_reports():
             time.sleep(2.5)
 
             def click_popup_btn(btn_text):
-                tag_btn_js = r'''(text) => {
+                click_btn_js = '''(text) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     for (let i = els.length - 1; i >= 0; i--) {
                         let el = els[i];
                         if (el.textContent === text && el.getBoundingClientRect().height > 0) {
-                            el.setAttribute('data-pw-btn', 'true');
+                            el.click();
                             return true;
                         }
                     }
@@ -377,9 +352,7 @@ def process_reports():
                 
                 for f in [page] + page.frames:
                     try:
-                        if f.evaluate(tag_btn_js, btn_text):
-                            f.locator('[data-pw-btn=\"true\"]').click(force=True, timeout=2000)
-                            f.evaluate('''document.querySelector('[data-pw-btn=\"true\"]').removeAttribute('data-pw-btn')''')
+                        if f.evaluate(click_btn_js, btn_text):
                             return True
                     except: pass
                 return False
@@ -440,7 +413,7 @@ def process_reports():
                 # -----------------------------------------------
                 # 4. STRICT SIZE-AWARE CROPPING ENGINE
                 # -----------------------------------------------
-                find_and_scroll_js = r'''(title) => {
+                find_and_scroll_js = '''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
                     matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
@@ -464,7 +437,7 @@ def process_reports():
                 
                 time.sleep(3)
 
-                find_and_crop_js = r'''(title) => {
+                find_and_crop_js = '''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     let matches = els.filter(el => el.textContent && el.textContent.trim() === title && el.offsetHeight > 0);
                     matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
