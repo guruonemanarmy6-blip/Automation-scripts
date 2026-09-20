@@ -137,7 +137,6 @@ capture_all_reports <- function() {
   auth_file <- normalizePath(file.path(getwd(), "zoho_auth.json"), winslash = "/", mustWork = FALSE)
   
   if (nzchar(cookie_data)) {
-    # FIX: Translate cookie formatting so Playwright accepts it
     cookie_data <- gsub('"unspecified"', '"Lax"', cookie_data)
     cookie_data <- gsub('"no_restriction"', '"None"', cookie_data)
     cookie_data <- gsub('"strict"', '"Strict"', cookie_data)
@@ -183,7 +182,7 @@ def process_reports():
         page = context.new_page()
         page.set_default_timeout(45000)
         
-        # --- CRITICAL FIX: Automatically accept popups ---
+        # --- Automatically accept popups ---
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
@@ -193,7 +192,6 @@ def process_reports():
             print(f\"\\n   -> Forcing navigation to tab: [ {target_tab_name} ]...\", flush=True)
             try:
                 time.sleep(4)
-                # Removed strict leaf-node check so it reliably finds the tab even with icons/formatting
                 find_tab_js = '''(tabName) => {
                     let els = Array.from(document.querySelectorAll('*'));
                     for (let el of els) {
@@ -225,12 +223,11 @@ def process_reports():
 
 
         # -----------------------------------------------
-        # COLLISION-PROOF SORTING LOGIC
+        # 2. LIGHTNING FAST SORTING (TAG & STRIKE METHOD)
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
-            # Bypassed Playwright's wait engine to inject CSS instantly using pure Javascript
             inject_css_js = '''() => {
                 let style = document.createElement('style');
                 style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
@@ -243,72 +240,72 @@ def process_reports():
                 try: fr.evaluate(inject_css_js)
                 except: pass
 
-            target_clean = column_name.lower().replace(' ', '')
-            sorted_successfully = False
+            tag_col_js = '''(targetCol) => {
+                let targetClean = targetCol.toLowerCase().replace(/\\s/g, '');
+                let els = Array.from(document.querySelectorAll('th, [role=\"columnheader\"], td[class*=\"header\"]'));
+                for (let el of els) {
+                    let rect = el.getBoundingClientRect();
+                    if (rect.height > 10 && rect.width > 20 && rect.y > 45) {
+                        let rawText = (el.getAttribute('title') || '') + ' ' + (el.innerText || '');
+                        let actualClean = rawText.replace(/\\s/g, '').toLowerCase();
+                        
+                        let match = false;
+                        if (actualClean.includes(targetClean)) {
+                            if (actualClean.includes('zero') && !targetClean.includes('zero')) match = false;
+                            else if (actualClean.includes('d2') && !targetClean.includes('d2')) match = false;
+                            else if (actualClean.includes('d6') && !targetClean.includes('d6')) match = false;
+                            else match = true;
+                        } else if (actualClean.length >= 5 && actualClean.startsWith(targetClean)) {
+                            match = true;
+                        }
+                        
+                        if (match) {
+                            el.scrollIntoView({behavior: 'instant', block: 'center'});
+                            el.setAttribute('data-pw-sort', 'true');
+                            return {width: rect.width};
+                        }
+                    }
+                }
+                return null;
+            }'''
 
+            sorted_successfully = False
             for f in [page] + page.frames:
                 if sorted_successfully: break
                 try:
-                    headers = f.locator('th, [role=\"columnheader\"], td[class*=\"header\"]')
-                    count = 0
-                    try: count = headers.count()
-                    except: pass
-                    
-                    for i in range(count):
-                        th = headers.nth(i)
-                        if th.is_visible():
-                            box = th.bounding_box()
-                            if box and box['y'] > 45 and box['height'] > 10 and box['width'] > 20:
-                                raw_text = str(th.get_attribute('title') or '') + \" \" + str(th.inner_text() or '')
-                                actual_clean = ''.join(raw_text.split()).lower()
-                                
-                                match = False
-                                if target_clean in actual_clean:
-                                    if \"zero\" in actual_clean and \"zero\" not in target_clean: match = False
-                                    elif \"d2\" in actual_clean and \"d2\" not in target_clean: match = False
-                                    elif \"d6\" in actual_clean and \"d6\" not in target_clean: match = False
-                                    else: match = True
-                                elif len(actual_clean) >= 5 and target_clean.startswith(actual_clean):
-                                    match = True
-                                    
-                                if match:
-                                    th.scroll_into_view_if_needed()
-                                    time.sleep(1)
-                                    box = th.bounding_box()
-                                    th.hover(force=True)
-                                    time.sleep(1)
-                                    
-                                    icon_clicked = False
-                                    icons = th.locator('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]')
-                                    icount = 0
-                                    try: icount = icons.count()
-                                    except: pass
-                                    
-                                    for j in range(icount - 1, -1, -1):
-                                        icon = icons.nth(j)
-                                        ibox = icon.bounding_box()
-                                        if ibox and ibox['width'] > 0:
-                                            icon.click(force=True, timeout=2000)
-                                            icon_clicked = True
-                                            print(\"      -> Success: Clicked the sort arrow icon directly.\", flush=True)
-                                            break
-                                            
-                                    if not icon_clicked:
-                                        th.click(position={'x': box['width'] - 6, 'y': 6}, force=True, timeout=2000)
-                                        print(\"      -> Success: Clicked absolute Top-Right corner fallback.\", flush=True)
-                                        
-                                    time.sleep(1.5)
-                                    popup = f.locator(\"text='View Underlying Data'\")
-                                    try:
-                                        if popup.count() > 0 and popup.first.is_visible():
-                                            page.keyboard.press(\"Escape\")
-                                            time.sleep(1)
-                                            th.click(position={'x': box['width'] - 4, 'y': 4}, force=True, timeout=2000)
-                                    except: pass
-
-                                    sorted_successfully = True
-                                    time.sleep(10) 
-                                    break
+                    res = f.evaluate(tag_col_js, column_name)
+                    if res:
+                        time.sleep(1)
+                        target = f.locator('[data-pw-sort=\"true\"]')
+                        target.hover(force=True)
+                        time.sleep(1)
+                        
+                        icon = target.locator('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]').last
+                        icon_clicked = False
+                        try:
+                            if icon.is_visible():
+                                icon.click(force=True, timeout=2000)
+                                icon_clicked = True
+                                print(\"      -> Success: Clicked the sort arrow icon directly.\", flush=True)
+                        except: pass
+                        
+                        if not icon_clicked:
+                            target.click(position={'x': res['width'] - 6, 'y': 6}, force=True, timeout=2000)
+                            print(\"      -> Success: Clicked absolute Top-Right corner fallback.\", flush=True)
+                            
+                        time.sleep(1.5)
+                        try:
+                            popup = f.locator(\"text='View Underlying Data'\")
+                            if popup.count() > 0 and popup.first.is_visible():
+                                page.keyboard.press(\"Escape\")
+                                time.sleep(1)
+                                target.click(position={'x': res['width'] - 4, 'y': 4}, force=True, timeout=2000)
+                        except: pass
+                        
+                        f.evaluate(\"document.querySelector('[data-pw-sort=\"true\"]').removeAttribute('data-pw-sort')\")
+                        sorted_successfully = True
+                        time.sleep(10)
+                        break
                 except Exception as e:
                     pass
             
@@ -316,26 +313,38 @@ def process_reports():
                 print(f\"      [!] Error: Could not locate a VISIBLE column '{column_name}' for sorting.\", flush=True)
 
 
+        # -----------------------------------------------
+        # 3. LIGHTNING FAST FILTERING (TAG & STRIKE METHOD)
+        # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
+            
+            tag_filter_js = '''(label) => {
+                let els = Array.from(document.querySelectorAll('*'));
+                for (let i = els.length - 1; i >= 0; i--) {
+                    let el = els[i];
+                    if (el.textContent && el.textContent.includes(label)) {
+                        let rect = el.getBoundingClientRect();
+                        if (rect.height > 0 && rect.width > 0) {
+                            el.scrollIntoView({behavior: 'instant', block: 'center'});
+                            el.setAttribute('data-pw-filter', 'true');
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }'''
+            
             opened = False
             for f in [page] + page.frames:
-                try:
-                    xpath = f\"//*[contains(text(), '{filter_label}')]\"
-                    elements = f.locator(xpath)
-                    ecount = 0
-                    try: ecount = elements.count()
-                    except: pass
-                    
-                    for i in range(ecount - 1, -1, -1):
-                        el = elements.nth(i)
-                        if el.is_visible():
-                            el.scroll_into_view_if_needed()
-                            el.click(position={'x': 15, 'y': 35}, force=True, timeout=3000)
-                            opened = True
-                            break
-                except: pass
                 if opened: break
+                try:
+                    if f.evaluate(tag_filter_js, filter_label):
+                        target = f.locator('[data-pw-filter=\"true\"]')
+                        target.click(position={'x': 15, 'y': 35}, force=True, timeout=3000)
+                        f.evaluate(\"document.querySelector('[data-pw-filter=\"true\"]').removeAttribute('data-pw-filter')\")
+                        opened = True
+                except: pass
                 
             if not opened:
                 print(f\"      [!] Error: Could not locate filter label '{filter_label}'\", flush=True)
@@ -344,18 +353,24 @@ def process_reports():
             time.sleep(2.5)
 
             def click_popup_btn(btn_text):
+                tag_btn_js = f'''(text) => {{
+                    let els = Array.from(document.querySelectorAll('*'));
+                    for (let i = els.length - 1; i >= 0; i--) {{
+                        let el = els[i];
+                        if (el.textContent === text && el.getBoundingClientRect().height > 0) {{
+                            el.setAttribute('data-pw-btn', 'true');
+                            return true;
+                        }}
+                    }}
+                    return false;
+                }}'''
+                
                 for f in [page] + page.frames:
                     try:
-                        elements = f.locator(f\"text=\\\"{btn_text}\\\"\")
-                        bcount = 0
-                        try: bcount = elements.count()
-                        except: pass
-                        
-                        for i in range(bcount - 1, -1, -1):
-                            el = elements.nth(i)
-                            if el.is_visible():
-                                el.click(force=True, timeout=2000)
-                                return True
+                        if f.evaluate(tag_btn_js, btn_text):
+                            f.locator('[data-pw-btn=\"true\"]').click(force=True, timeout=2000)
+                            f.evaluate(\"document.querySelector('[data-pw-btn=\"true\"]').removeAttribute('data-pw-btn')\")
+                            return True
                     except: pass
                 return False
 
@@ -413,7 +428,7 @@ def process_reports():
                 time.sleep(5)
 
                 # -----------------------------------------------
-                # 2. STRICT SIZE-AWARE CROPPING ENGINE
+                # 4. STRICT SIZE-AWARE CROPPING ENGINE
                 # -----------------------------------------------
                 find_and_scroll_js = '''(title) => {
                     let els = Array.from(document.querySelectorAll('*'));
