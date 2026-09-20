@@ -2,8 +2,6 @@ name: Hourly Automation Script
 
 on:
   schedule:
-    # Runs at minute 30 past every hour from 02:00 to 16:00 UTC
-    # This translates exactly to 8:00 AM to 10:00 PM IST
     - cron: '30 2-16 * * *'
   workflow_dispatch:
 
