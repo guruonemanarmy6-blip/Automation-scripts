@@ -202,8 +202,22 @@ def process_reports():
             'viewport': {'width': 1920, 'height': 1080}
         }
         
+        # -----------------------------------------------
+        # UNIVERSAL COOKIE INJECTOR
+        # -----------------------------------------------
         if os.path.exists(AUTH_FILE) and os.path.getsize(AUTH_FILE) > 0:
-            context_args['storage_state'] = AUTH_FILE
+            try:
+                with open(AUTH_FILE, 'r') as f:
+                    cookie_content = json.load(f)
+                
+                if isinstance(cookie_content, list):
+                    context_args['storage_state'] = {'cookies': cookie_content, 'origins': []}
+                elif isinstance(cookie_content, dict) and 'cookies' in cookie_content:
+                    context_args['storage_state'] = cookie_content
+                else:
+                    context_args['storage_state'] = AUTH_FILE
+            except:
+                context_args['storage_state'] = AUTH_FILE
             
         context = browser.new_context(**context_args)
         page = context.new_page()
@@ -212,7 +226,7 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. LEVEL 25 CORS-IMMUNE SORTING
+        # LEVEL 25 CORS-IMMUNE SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
@@ -263,9 +277,8 @@ def process_reports():
             else:
                 print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 30s.\", flush=True)
 
-
         # -----------------------------------------------
-        # 2. LEVEL 25 CORS-IMMUNE FILTERING 
+        # LEVEL 25 CORS-IMMUNE FILTERING 
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
@@ -333,7 +346,6 @@ def process_reports():
             print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
             page.wait_for_timeout(10000) 
 
-
         # -----------------------------------------------
         # THE FAIL-SAFE LOOP
         # -----------------------------------------------
@@ -358,7 +370,7 @@ def process_reports():
                     page.goto(report_url, wait_until='domcontentloaded')
                     page.wait_for_timeout(8000) 
                     
-                    # --- DIAGNOSTIC VISION INJECTION ---
+                    # --- DIAGNOSTIC VISION ---
                     print(f\"      -> CURRENT CLOUD PAGE TITLE: '{page.title()}'\", flush=True)
                     try: page.screenshot(path=debug_path, full_page=True)
                     except: pass
@@ -376,7 +388,7 @@ def process_reports():
                     page.wait_for_timeout(5000)
 
                     # -----------------------------------------------
-                    # 3. CORS-IMMUNE CROPPING ENGINE
+                    # CORS-IMMUNE CROPPING ENGINE
                     # -----------------------------------------------
                     crop_box = None
                     for attempt in range(10): 
