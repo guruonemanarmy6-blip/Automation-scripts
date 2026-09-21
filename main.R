@@ -197,52 +197,43 @@ def process_reports():
             args=['--disable-blink-features=AutomationControlled']
         )
         
+        # LEVEL 29: Indian Geo-Spoofing
         context_args = {
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
             'viewport': {'width': 1920, 'height': 1080},
+            'timezone_id': 'Asia/Kolkata',
+            'locale': 'en-IN',
             'extra_http_headers': {
-                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Sec-Fetch-Dest': 'document',
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'none'
             }
         }
         
-        context = browser.new_context(**context_args)
-        
-        # -----------------------------------------------
-        # LEVEL 28: DOMAIN-BLANKET COOKIE INJECTOR
-        # -----------------------------------------------
+        # LEVEL 29: Native Storage State Formatter
         if os.path.exists(AUTH_FILE) and os.path.getsize(AUTH_FILE) > 0:
             try:
                 with open(AUTH_FILE, 'r') as f:
                     cookie_content = json.load(f)
                 
-                cookies_list = []
-                if isinstance(cookie_content, dict) and 'cookies' in cookie_content:
-                    cookies_list = cookie_content['cookies']
-                elif isinstance(cookie_content, list):
-                    cookies_list = cookie_content
+                # Force the raw list into a strict Playwright format
+                if isinstance(cookie_content, list):
+                    valid_state = {'cookies': cookie_content, 'origins': []}
+                elif isinstance(cookie_content, dict) and 'cookies' in cookie_content:
+                    valid_state = cookie_content
+                else:
+                    valid_state = {'cookies': [], 'origins': []}
                 
-                normalized_cookies = []
-                for c in cookies_list:
-                    # Force the cookie to cover ALL Zoho subdomains so the SSO redirect survives
-                    if 'domain' in c and 'zoho.in' in c['domain']:
-                        c['domain'] = '.zoho.in'
-                        
-                    # Remove strict extension artifacts that crash Playwright
-                    if 'hostOnly' in c: del c['hostOnly']
-                    if 'session' in c: del c['session']
-                    if 'storeId' in c: del c['storeId']
-                    if 'id' in c: del c['id']
-                    
-                    normalized_cookies.append(c)
+                with open(AUTH_FILE, 'w') as f:
+                    json.dump(valid_state, f)
                 
-                context.add_cookies(normalized_cookies)
-                print(\"      -> Successfully normalized and injected cookies across all Zoho subdomains.\", flush=True)
+                context_args['storage_state'] = AUTH_FILE
+                print(\"      -> Successfully structured JSON for Playwright Storage State.\", flush=True)
             except Exception as e:
-                print(f\"      [!] Cookie Injection Error: {e}\", flush=True)
+                print(f\"      [!] Cookie Parse Error: {e}\", flush=True)
 
+        context = browser.new_context(**context_args)
         page = context.new_page()
         page.set_default_timeout(60000) 
         page.on('dialog', lambda dialog: dialog.accept())
@@ -368,7 +359,6 @@ def process_reports():
             page.keyboard.press(\"Escape\") 
             print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
             page.wait_for_timeout(10000) 
-
 
         # -----------------------------------------------
         # THE FAIL-SAFE LOOP
