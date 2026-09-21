@@ -180,6 +180,7 @@ capture_all_reports <- function() {
   py_script <- paste0("
 import json
 import os
+import time
 import traceback
 from playwright.sync_api import sync_playwright
 
@@ -211,18 +212,10 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. LEVEL 20 SPA-OPTIMIZED SORTING
+        # 1. LEVEL 21 ACTIVE POLLING: SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
-            
-            inject_css_js = r'''() => {
-                try {
-                    let style = document.createElement('style');
-                    style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
-                    document.head.appendChild(style);
-                } catch(e) {}
-            }'''
             
             sort_js = r'''(colName) => {
                 try {
@@ -258,19 +251,22 @@ def process_reports():
                 return false;
             }'''
 
+            # LEVEL 21: Poll every 2 seconds for up to 40 seconds
             sorted_successfully = False
-            for f in page.frames:
-                if f.is_detached(): continue
-                try:
-                    f.evaluate(inject_css_js)
-                    if f.evaluate(sort_js, column_name):
-                        print(f\"      -> Success: Triggered sort logic natively inside frame.\", flush=True)
-                        sorted_successfully = True
-                        break
-                except: pass
+            for attempt in range(20):
+                for f in page.frames:
+                    if f.is_detached(): continue
+                    try:
+                        if f.evaluate(sort_js, column_name):
+                            sorted_successfully = True
+                            break
+                    except: pass
+                if sorted_successfully: break
+                time.sleep(2)
                 
             if sorted_successfully:
-                page.wait_for_timeout(1500)
+                print(f\"      -> Success: Triggered sort logic natively inside frame.\", flush=True)
+                time.sleep(2)
                 dismiss_js = r'''() => {
                     try {
                         let iter = document.evaluate('//text()[contains(., \"View Underlying Data\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
@@ -281,19 +277,18 @@ def process_reports():
                     if f.is_detached(): continue
                     try: f.evaluate(dismiss_js)
                     except: pass
-                page.wait_for_timeout(10000)
+                time.sleep(10)
             else:
-                print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting.\", flush=True)
+                print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 40s.\", flush=True)
 
         # -----------------------------------------------
-        # 2. LEVEL 20 SPA-PIERCING FILTER ENGINE 
+        # 2. LEVEL 21 ACTIVE POLLING: FILTERING
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
             open_filter_js = r'''(label) => {
                 try {
-                    // LEVEL 20 Fix: text() inside contains climbs up to the exact span parent, bypassing hidden formatting tags
                     let iter = document.evaluate('//text()[contains(., \"' + label + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                     for (let i = iter.snapshotLength - 1; i >= 0; i--) {
                         let el = iter.snapshotItem(i);
@@ -314,20 +309,24 @@ def process_reports():
                 return false;
             }'''
             
+            # LEVEL 21: Poll every 2 seconds for up to 40 seconds to wait for frame loads
             opened = False
-            for f in page.frames:
-                if f.is_detached(): continue
-                try:
-                    if f.evaluate(open_filter_js, filter_label):
-                        opened = True
-                        break
-                except: pass
+            for attempt in range(20):
+                for f in page.frames:
+                    if f.is_detached(): continue
+                    try:
+                        if f.evaluate(open_filter_js, filter_label):
+                            opened = True
+                            break
+                    except: pass
+                if opened: break
+                time.sleep(2)
                 
             if not opened:
-                print(f\"      [!] Warning: Could not locate filter label '{filter_label}'. Skipping filter.\", flush=True)
+                print(f\"      [!] Warning: Could not locate filter label '{filter_label}' after 40s. Skipping.\", flush=True)
                 return
                 
-            page.wait_for_timeout(2500)
+            time.sleep(3)
 
             def click_popup_btn(btn_text):
                 click_btn_js = r'''(text) => {
@@ -347,39 +346,41 @@ def process_reports():
                     return false;
                 }'''
                 
-                for f in page.frames:
-                    if f.is_detached(): continue
-                    try:
-                        if f.evaluate(click_btn_js, btn_text):
-                            return True
-                    except: pass
+                # Active polling for popups too
+                for _ in range(5):
+                    for f in page.frames:
+                        if f.is_detached(): continue
+                        try:
+                            if f.evaluate(click_btn_js, btn_text): return True
+                        except: pass
+                    time.sleep(1)
                 return False
 
             print(\"      -> Clicking 'Clear' defaults...\", flush=True)
             if not click_popup_btn(\"Clear\"):
                 click_popup_btn(\"Select None\")
-            page.wait_for_timeout(1000)
+            time.sleep(1)
 
             print(f\"      -> Typing '{filter_value}'...\", flush=True)
             page.keyboard.type(filter_value)
-            page.wait_for_timeout(1500)
+            time.sleep(2)
 
             print(f\"      -> Selecting '{filter_value}' box...\", flush=True)
             if not click_popup_btn(filter_value):
                 page.keyboard.press(\"ArrowDown\")
-                page.wait_for_timeout(500)
+                time.sleep(0.5)
                 page.keyboard.press(\"Space\")
-            page.wait_for_timeout(1000)
+            time.sleep(1)
 
             print(\"      -> Clicking 'OK' to lock filter...\", flush=True)
             if not click_popup_btn(\"OK\"):
                 if not click_popup_btn(\"Apply\"):
                     page.keyboard.press(\"Enter\")
             
-            page.wait_for_timeout(500)
+            time.sleep(0.5)
             page.keyboard.press(\"Escape\") 
             print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
-            page.wait_for_timeout(10000) 
+            time.sleep(10) 
 
 
         # -----------------------------------------------
@@ -402,11 +403,9 @@ def process_reports():
                     except: pass
 
                     page.goto(report_url, wait_until='domcontentloaded')
-                    page.wait_for_timeout(15000) 
                     
-                    # LEVEL 20: Network Idle Fallback allows GitHub runners extra time to download Zoho's iframes
-                    try: page.wait_for_load_state('networkidle', timeout=10000)
-                    except: pass
+                    # Instead of waiting 15 seconds passively, wait just 5 then start actively polling
+                    time.sleep(5)
                     
                     apply_filter('SZM:', 'Gursewak Singh')
 
@@ -418,44 +417,11 @@ def process_reports():
                     if 'sort_column' in item:
                         apply_sort(item['sort_column'])
                         
-                    page.wait_for_timeout(5000)
+                    time.sleep(5)
 
                     # -----------------------------------------------
-                    # 3. LEVEL 20 SPA-PIERCING CROPPING ENGINE
+                    # 3. LEVEL 21 ACTIVE POLLING: CROPPING ENGINE
                     # -----------------------------------------------
-                    find_and_scroll_js = r'''(title) => {
-                        try {
-                            let iter = document.evaluate('//text()[contains(., \"' + title + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                            let matches = [];
-                            for(let i=0; i<iter.snapshotLength; i++) {
-                                let el = iter.snapshotItem(i);
-                                if(el.offsetHeight > 0) matches.push(el);
-                            }
-                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                            for (let match of matches) {
-                                let container = match;
-                                let depth = 0;
-                                while (container && container.parentElement && depth < 30) {
-                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                        container.scrollIntoView({behavior: 'instant', block: 'center'});
-                                        return true;
-                                    }
-                                    container = container.parentElement;
-                                    depth++;
-                                }
-                            }
-                        } catch(e){}
-                        return false;
-                    }'''
-                    
-                    for f in page.frames:
-                        if f.is_detached(): continue
-                        try:
-                            if f.evaluate(find_and_scroll_js, table_title): break
-                        except: pass
-                    
-                    page.wait_for_timeout(3000)
-
                     find_and_crop_js = r'''(title) => {
                         try {
                             let iter = document.evaluate('//text()[contains(., \"' + title + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
@@ -470,6 +436,7 @@ def process_reports():
                                 let depth = 0;
                                 while (container && container.parentElement && depth < 30) {
                                     if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                        container.scrollIntoView({behavior: 'instant', block: 'center'});
                                         let rect = container.getBoundingClientRect();
                                         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
                                     }
@@ -482,33 +449,33 @@ def process_reports():
                     }'''
 
                     crop_box = None
-                    for f in page.frames:
-                        if f.is_detached(): continue
-                        try:
-                            raw_rect = f.evaluate(find_and_crop_js, table_title)
-                            if raw_rect:
-                                offset_x = 0
-                                offset_y = 0
-                                
-                                if f != page.main_frame:
-                                    try:
-                                        f_box = f.frame_element().bounding_box()
-                                        if f_box:
-                                            offset_x = f_box['x']
-                                            offset_y = f_box['y']
-                                    except: pass
-
-                                vw = page.evaluate('window.innerWidth')
-                                vh = page.evaluate('window.innerHeight')
-                                
-                                x = max(0, raw_rect['x'] + offset_x)
-                                y = max(0, raw_rect['y'] + offset_y)
-                                width = min(raw_rect['width'], vw - x)
-                                height = min(raw_rect['height'], vh - y)
-                                
-                                crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
-                                break
-                        except: pass
+                    for attempt in range(10): # Poll for crop box up to 20 seconds
+                        for f in page.frames:
+                            if f.is_detached(): continue
+                            try:
+                                raw_rect = f.evaluate(find_and_crop_js, table_title)
+                                if raw_rect:
+                                    offset_x = 0
+                                    offset_y = 0
+                                    if f != page.main_frame:
+                                        try:
+                                            f_box = f.frame_element().bounding_box()
+                                            if f_box:
+                                                offset_x = f_box['x']
+                                                offset_y = f_box['y']
+                                        except: pass
+                                    vw = page.evaluate('window.innerWidth')
+                                    vh = page.evaluate('window.innerHeight')
+                                    x = max(0, raw_rect['x'] + offset_x)
+                                    y = max(0, raw_rect['y'] + offset_y)
+                                    width = min(raw_rect['width'], vw - x)
+                                    height = min(raw_rect['height'], vh - y)
+                                    
+                                    crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
+                                    break
+                            except: pass
+                        if crop_box: break
+                        time.sleep(2)
 
                     if crop_box and crop_box['valid']:
                         page.screenshot(path=file_path, clip={'x': crop_box['x'], 'y': crop_box['y'], 'width': crop_box['width'], 'height': crop_box['height']}, timeout=25000)
