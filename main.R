@@ -16,10 +16,6 @@ if (time_numeric < 8.0 || time_numeric > (22 + 10/60)) {
   quit(save = "no", status = 0)
 }
 
-# ==========================================
-# ZOHO MULTI-REPORT CAPTURE & WHATSAPP AUTO-SHARE
-# ==========================================
-
 # --- 1. DYNAMIC R PACKAGE INSTALLATION ---
 required_packages <- c("reticulate", "httr", "jsonlite")
 for (pkg in required_packages) {
@@ -32,7 +28,7 @@ for (pkg in required_packages) {
 # --- 2. CONFIGURATION ---
 INSTANCE_ID <- "710722687085"
 API_TOKEN <- "502764d8d4474e06aa0e3daada0c7fde6646e9ea53214d2bb8"
-WHATSAPP_CHAT_ID <- "120363411226278041@g.us"
+WHATSAPP_CHAT_ID <- "120363411447664783@g.us"
 
 # --- 3. DYNAMIC PLAYWRIGHT SETUP ---
 env_name <- "zoho_automation_env"
@@ -184,6 +180,7 @@ capture_all_reports <- function() {
   py_script <- paste0("
 import json
 import os
+import time
 import traceback
 from playwright.sync_api import sync_playwright
 
@@ -215,171 +212,173 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. CORS-IMMUNE SORTING
+        # 1. PURE V8 OMNI-SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
-            inject_css_js = r'''() => {
-                try {
-                    let style = document.createElement('style');
-                    style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
-                    document.head.appendChild(style);
-                } catch(e) {}
+            sort_js = r'''(colName) => {
+                function scan(win) {
+                    try {
+                        let style = win.document.createElement('style');
+                        style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
+                        win.document.head.appendChild(style);
+                        
+                        let cleanName = colName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        let els = Array.from(win.document.querySelectorAll('th, [role=\"columnheader\"], td[class*=\"header\"]'));
+                        
+                        for (let el of els) {
+                            let rect = el.getBoundingClientRect();
+                            if (rect.height > 5 && rect.width > 20) {
+                                let text = (el.getAttribute('title') || '') + ' ' + (el.textContent || '');
+                                let cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                
+                                if (cleanText.includes(cleanName) && cleanText.length > 0) {
+                                    if (cleanText.includes('zero') && !cleanName.includes('zero')) continue;
+                                    if (cleanText.includes('d2') && !cleanName.includes('d2')) continue;
+                                    if (cleanText.includes('d6') && !cleanName.includes('d6')) continue;
+                                    
+                                    el.scrollIntoView({behavior: 'instant', block: 'center'});
+                                    
+                                    let icon = el.querySelector('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]');
+                                    if (icon) {
+                                        icon.scrollIntoView({behavior: 'instant', block: 'center'});
+                                        icon.click();
+                                        icon.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                                        icon.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                                    } else {
+                                        el.click();
+                                        el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                                        el.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                                    }
+                                    return true;
+                                }
+                            }
+                        }
+                        for (let i = 0; i < win.frames.length; i++) {
+                            if (scan(win.frames[i])) return true;
+                        }
+                    } catch(e){}
+                    return false;
+                }
+                return scan(window);
             }'''
             
-            sort_js = r'''(colName) => {
-                try {
-                    let cleanName = colName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    // Aggressive broadened query to catch Zoho's custom div headers
-                    let els = Array.from(document.querySelectorAll('th, [role=\"columnheader\"], td, div[class*=\"header\"], div[class*=\"Header\"]'));
-                    
-                    for (let el of els) {
-                        let rect = el.getBoundingClientRect();
-                        if (rect.height > 5 && rect.width > 20) {
-                            let text = (el.getAttribute('title') || '') + ' ' + (el.textContent || '');
-                            let cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
-                            
-                            if (cleanText.includes(cleanName) && cleanText.length > 0) {
-                                if (cleanText.includes('zero') && !cleanName.includes('zero')) continue;
-                                if (cleanText.includes('d2') && !cleanName.includes('d2')) continue;
-                                if (cleanText.includes('d6') && !cleanName.includes('d6')) continue;
-                                
+            try:
+                if page.evaluate(sort_js, column_name):
+                    print(f\"      -> Success: Triggered sort logic natively inside frame.\", flush=True)
+                    time.sleep(1.5)
+                    dismiss_js = r'''() => {
+                        function scan(win) {
+                            try {
+                                let iter = win.document.evaluate('//*[text()=\"View Underlying Data\"]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                                if (iter.snapshotLength > 0) { iter.snapshotItem(0).click(); return true; }
+                                for (let i = 0; i < win.frames.length; i++) if (scan(win.frames[i])) return true;
+                            } catch(e){}
+                            return false;
+                        }
+                        scan(window);
+                    }'''
+                    try: page.evaluate(dismiss_js)
+                    except: pass
+                    time.sleep(10)
+                else:
+                    print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting.\", flush=True)
+            except Exception as e:
+                pass
+
+
+        # -----------------------------------------------
+        # 2. PURE V8 FILTERING (NO IPC LOOPING)
+        # -----------------------------------------------
+        def apply_filter(filter_label, filter_value):
+            print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
+            
+            open_filter_js = r'''(label) => {
+                function scan(win) {
+                    try {
+                        let iter = win.document.evaluate('//*[contains(text(), \"' + label + '\")]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
+                            let el = iter.snapshotItem(i);
+                            let rect = el.getBoundingClientRect();
+                            if (rect.height > 0 && rect.width > 0) {
                                 el.scrollIntoView({behavior: 'instant', block: 'center'});
-                                
-                                // Strike exactly 12 pixels from the right edge of the cell 
-                                let targetX = rect.x + rect.width - 12;
-                                let targetY = rect.y + (rect.height / 2);
-                                
-                                let dropEl = document.elementFromPoint(targetX, targetY) || el;
+                                let targetX = rect.x + 15;
+                                let targetY = rect.y + 35;
+                                let dropEl = win.document.elementFromPoint(targetX, targetY) || el;
                                 dropEl.click();
                                 dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
                                 dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
                                 return true;
                             }
                         }
-                    }
-                } catch(e){}
-                return false;
-            }'''
-
-            sorted_successfully = False
-            for f in page.frames:
-                if f.is_detached(): continue
-                try:
-                    f.evaluate(inject_css_js)
-                    if f.evaluate(sort_js, column_name):
-                        print(f\"      -> Success: Triggered sort logic natively inside frame.\", flush=True)
-                        sorted_successfully = True
-                        break
-                except: pass
-                
-            if sorted_successfully:
-                page.wait_for_timeout(1500)
-                dismiss_js = r'''() => {
-                    try {
-                        let iter = document.evaluate('//*[text()=\"View Underlying Data\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        if (iter.snapshotLength > 0) iter.snapshotItem(0).click();
-                    } catch(e){}
-                }'''
-                for f in page.frames:
-                    if f.is_detached(): continue
-                    try: f.evaluate(dismiss_js)
-                    except: pass
-                page.wait_for_timeout(10000)
-            else:
-                print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting.\", flush=True)
-
-        # -----------------------------------------------
-        # 2. CORS-IMMUNE FILTERING 
-        # -----------------------------------------------
-        def apply_filter(filter_label, filter_value):
-            print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
-            
-            open_filter_js = r'''(label) => {
-                try {
-                    let iter = document.evaluate('//*[contains(text(), \"' + label + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                    for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                        let el = iter.snapshotItem(i);
-                        let rect = el.getBoundingClientRect();
-                        if (rect.height > 0 && rect.width > 0) {
-                            el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            let targetX = rect.x + 15;
-                            let targetY = rect.y + 35;
-                            let dropEl = document.elementFromPoint(targetX, targetY) || el;
-                            dropEl.click();
-                            dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
-                            dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-                            return true;
-                        }
-                    }
-                } catch(e){}
-                return false;
-            }'''
-            
-            opened = False
-            for f in page.frames:
-                if f.is_detached(): continue
-                try:
-                    if f.evaluate(open_filter_js, filter_label):
-                        opened = True
-                        break
-                except: pass
-                
-            if not opened:
-                print(f\"      [!] Warning: Could not locate filter label '{filter_label}'. Skipping filter.\", flush=True)
-                return
-                
-            page.wait_for_timeout(2500)
-
-            def click_popup_btn(btn_text):
-                click_btn_js = r'''(text) => {
-                    try {
-                        let iter = document.evaluate('//*[normalize-space(text())= \"' + text + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                            let el = iter.snapshotItem(i);
-                            if (el.getBoundingClientRect().height > 0) {
-                                el.click();
-                                return true;
-                            }
+                        for (let i = 0; i < win.frames.length; i++) {
+                            if (scan(win.frames[i])) return true;
                         }
                     } catch(e){}
                     return false;
-                }'''
+                }
+                return scan(window);
+            }'''
+            
+            try:
+                if not page.evaluate(open_filter_js, filter_label):
+                    print(f\"      [!] Warning: Could not locate filter label '{filter_label}'. Skipping filter.\", flush=True)
+                    return
+            except Exception as e:
+                print(f\"      [!] Warning: Error locating filter label '{filter_label}'. Skipping filter.\", flush=True)
+                return
                 
-                for f in page.frames:
-                    if f.is_detached(): continue
-                    try:
-                        if f.evaluate(click_btn_js, btn_text):
-                            return True
-                    except: pass
-                return False
+            time.sleep(2.5)
+
+            def click_popup_btn(btn_text):
+                click_btn_js = r'''(text) => {
+                    function scan(win) {
+                        try {
+                            let iter = win.document.evaluate('//*[text()=\"' + text + '\"]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                            for (let i = iter.snapshotLength - 1; i >= 0; i--) {
+                                let el = iter.snapshotItem(i);
+                                if (el.getBoundingClientRect().height > 0) {
+                                    el.click();
+                                    return true;
+                                }
+                            }
+                            for (let i = 0; i < win.frames.length; i++) {
+                                if (scan(win.frames[i])) return true;
+                            }
+                        } catch(e){}
+                        return false;
+                    }
+                    return scan(window);
+                }'''
+                try: return page.evaluate(click_btn_js, btn_text)
+                except: return False
 
             print(\"      -> Clicking 'Clear' defaults...\", flush=True)
             if not click_popup_btn(\"Clear\"):
                 click_popup_btn(\"Select None\")
-            page.wait_for_timeout(1000)
+            time.sleep(1)
 
             print(f\"      -> Typing '{filter_value}'...\", flush=True)
             page.keyboard.type(filter_value)
-            page.wait_for_timeout(1500)
+            time.sleep(1.5)
 
             print(f\"      -> Selecting '{filter_value}' box...\", flush=True)
             if not click_popup_btn(filter_value):
                 page.keyboard.press(\"ArrowDown\")
-                page.wait_for_timeout(500)
+                time.sleep(0.5)
                 page.keyboard.press(\"Space\")
-            page.wait_for_timeout(1000)
+            time.sleep(1)
 
             print(\"      -> Clicking 'OK' to lock filter...\", flush=True)
             if not click_popup_btn(\"OK\"):
                 if not click_popup_btn(\"Apply\"):
                     page.keyboard.press(\"Enter\")
             
-            page.wait_for_timeout(500)
+            time.sleep(0.5)
             page.keyboard.press(\"Escape\") 
             print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
-            page.wait_for_timeout(10000) 
+            time.sleep(10) 
 
 
         # -----------------------------------------------
@@ -402,7 +401,7 @@ def process_reports():
                     except: pass
 
                     page.goto(report_url, wait_until='domcontentloaded')
-                    page.wait_for_timeout(15000) 
+                    time.sleep(15) 
                     
                     apply_filter('SZM:', 'Gursewak Singh')
 
@@ -414,103 +413,67 @@ def process_reports():
                     if 'sort_column' in item:
                         apply_sort(item['sort_column'])
                         
-                    page.wait_for_timeout(5000)
+                    time.sleep(5)
 
                     # -----------------------------------------------
-                    # 3. CORS-IMMUNE CROPPING ENGINE
+                    # 3. PURE V8 CROPPING ENGINE (NO IPC LOOPING)
                     # -----------------------------------------------
-                    find_and_scroll_js = r'''(title) => {
-                        try {
-                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                            let matches = [];
-                            for(let i=0; i<iter.snapshotLength; i++) {
-                                let el = iter.snapshotItem(i);
-                                if(el.offsetHeight > 0) matches.push(el);
-                            }
-                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                            for (let match of matches) {
-                                let container = match;
-                                let depth = 0;
-                                while (container && container.parentElement && depth < 30) {
-                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                        container.scrollIntoView({behavior: 'instant', block: 'center'});
-                                        return true;
-                                    }
-                                    container = container.parentElement;
-                                    depth++;
-                                }
-                            }
-                        } catch(e){}
-                        return false;
-                    }'''
-                    
-                    for f in page.frames:
-                        if f.is_detached(): continue
-                        try:
-                            if f.evaluate(find_and_scroll_js, table_title): break
-                        except: pass
-                    
-                    page.wait_for_timeout(3000)
-
                     find_and_crop_js = r'''(title) => {
-                        try {
-                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                            let matches = [];
-                            for(let i=0; i<iter.snapshotLength; i++) {
-                                let el = iter.snapshotItem(i);
-                                if(el.offsetHeight > 0) matches.push(el);
-                            }
-                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                            for (let match of matches) {
-                                let container = match;
-                                let depth = 0;
-                                while (container && container.parentElement && depth < 30) {
-                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                        let rect = container.getBoundingClientRect();
-                                        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-                                    }
-                                    container = container.parentElement;
-                                    depth++;
+                        function scan(win, offsetX, offsetY) {
+                            try {
+                                let iter = win.document.evaluate('//*[contains(text(), \"' + title + '\")]', win.document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                                let matches = [];
+                                for(let i=0; i<iter.snapshotLength; i++) {
+                                    let el = iter.snapshotItem(i);
+                                    if(el.offsetHeight > 0) matches.push(el);
                                 }
-                            }
-                        } catch(e){}
-                        return null;
+                                matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
+                                for (let match of matches) {
+                                    let container = match;
+                                    let depth = 0;
+                                    while (container && container.parentElement && depth < 30) {
+                                        if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                            container.scrollIntoView({behavior: 'instant', block: 'center'});
+                                            let rect = container.getBoundingClientRect();
+                                            return { x: rect.x + offsetX, y: rect.y + offsetY, width: rect.width, height: rect.height };
+                                        }
+                                        container = container.parentElement;
+                                        depth++;
+                                    }
+                                }
+                                
+                                let iframes = win.document.querySelectorAll('iframe');
+                                for(let i=0; i < iframes.length; i++) {
+                                    try {
+                                        let rect = iframes[i].getBoundingClientRect();
+                                        let res = scan(win.frames[i], offsetX + rect.x, offsetY + rect.y);
+                                        if(res) return res;
+                                    } catch(e){}
+                                }
+                            } catch(e){}
+                            return null;
+                        }
+                        return scan(window, 0, 0);
                     }'''
 
                     crop_box = None
-                    for f in page.frames:
-                        if f.is_detached(): continue
-                        try:
-                            raw_rect = f.evaluate(find_and_crop_js, table_title)
-                            if raw_rect:
-                                offset_x = 0
-                                offset_y = 0
-                                
-                                if f != page.main_frame:
-                                    try:
-                                        f_box = f.frame_element().bounding_box()
-                                        if f_box:
-                                            offset_x = f_box['x']
-                                            offset_y = f_box['y']
-                                    except: pass
+                    try:
+                        crop_box = page.evaluate(find_and_crop_js, table_title)
+                    except: pass
 
-                                vw = page.evaluate('window.innerWidth')
-                                vh = page.evaluate('window.innerHeight')
-                                
-                                x = max(0, raw_rect['x'] + offset_x)
-                                y = max(0, raw_rect['y'] + offset_y)
-                                width = min(raw_rect['width'], vw - x)
-                                height = min(raw_rect['height'], vh - y)
-                                
-                                crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
-                                break
-                        except: pass
-
-                    if crop_box and crop_box['valid']:
-                        page.screenshot(path=file_path, clip={'x': crop_box['x'], 'y': crop_box['y'], 'width': crop_box['width'], 'height': crop_box['height']}, timeout=25000)
-                        status = f'CROPPED ({int(crop_box[\"width\"])})x({int(crop_box[\"height\"])})'
+                    if crop_box and crop_box.get('height', 0) > 100 and crop_box.get('width', 0) > 100:
+                        vw = page.evaluate('window.innerWidth')
+                        vh = page.evaluate('window.innerHeight')
+                        
+                        x = max(0, crop_box['x'])
+                        y = max(0, crop_box['y'])
+                        width = min(crop_box['width'], vw - x)
+                        height = min(crop_box['height'], vh - y)
+                        
+                        page.screenshot(path=file_path, clip={'x': x, 'y': y, 'width': width, 'height': height})
+                        status = f'CROPPED ({int(width)})x({int(height)})'
                     else:
-                        page.screenshot(path=file_path, full_page=False, timeout=25000)
+                        page.screenshot(path=file_path, full_page=False)
                         status = 'FULL VIEWPORT (Fallback)'
 
                     captured_results.append({
@@ -520,7 +483,7 @@ def process_reports():
 
                 except Exception as e:
                     print(f'      [!] Report {idx+1} failed catastrophically: {e}', flush=True)
-                    try: page.screenshot(path=file_path, full_page=False, timeout=25000)
+                    try: page.screenshot(path=file_path, full_page=False)
                     except: pass
                     captured_results.append({
                         'index': idx + 1, 'tab': tab_name, 'title': table_title, 'file': filename, 'path': file_path, 'status': 'FAILED (Fallback)'
@@ -537,11 +500,6 @@ process_reports()
 
 # --- 6. WHATSAPP SENDING FUNCTION ---
 send_to_whatsapp <- function(file_path, title) {
-  if (!nzchar(API_TOKEN) || !nzchar(WHATSAPP_CHAT_ID)) {
-    message("   -> [SKIPPED] Missing WhatsApp API credentials.")
-    return()
-  }
-  
   url <- sprintf("https://api.green-api.com/waInstance%s/sendFileByUpload/%s", INSTANCE_ID, API_TOKEN)
   caption_text <- sprintf("📊 *%s*", title)
   
