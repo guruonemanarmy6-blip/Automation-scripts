@@ -212,146 +212,129 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. LEVEL 21 ACTIVE POLLING: SORTING
+        # 1. LEVEL 22 NATIVE PLAYWRIGHT SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             
-            sort_js = r'''(colName) => {
+            inject_css_js = '''() => {
                 try {
-                    let cleanName = colName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    let els = Array.from(document.querySelectorAll('th, [role=\"columnheader\"], td, div[class*=\"header\"], div[class*=\"Header\"]'));
-                    
-                    for (let el of els) {
-                        let rect = el.getBoundingClientRect();
-                        if (rect.height > 2 && rect.width > 10) {
-                            let text = (el.getAttribute('title') || '') + ' ' + (el.textContent || '');
-                            let cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
-                            
-                            if (cleanText.includes(cleanName) && cleanText.length > 0) {
-                                if (cleanText.includes('zero') && !cleanName.includes('zero')) continue;
-                                if (cleanText.includes('d2') && !cleanName.includes('d2')) continue;
-                                if (cleanText.includes('d6') && !cleanName.includes('d6')) continue;
-                                
-                                el.scrollIntoView({behavior: 'instant', block: 'center'});
-                                
-                                let targetX = rect.x + rect.width - 12;
-                                let targetY = rect.y + (rect.height / 2);
-                                
-                                let dropEl = document.elementFromPoint(targetX, targetY) || el;
-                                dropEl.dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
-                                dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
-                                dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-                                dropEl.click();
-                                return true;
-                            }
-                        }
-                    }
-                } catch(e){}
-                return false;
+                    let style = document.createElement('style');
+                    style.innerHTML = \"*[class*='tooltip'], [id*='tooltip'], .lyteTooltip { display: none !important; opacity: 0 !important; pointer-events: none !important; } th svg, th i, th [class*='sort'], th [class*='icon'], .zdb-sort-icon { opacity: 1 !important; visibility: visible !important; display: inline-block !important; }\";
+                    document.head.appendChild(style);
+                } catch(e) {}
             }'''
+            
+            try: page.evaluate(inject_css_js)
+            except: pass
+            for f in page.frames:
+                if not f.is_detached():
+                    try: f.evaluate(inject_css_js)
+                    except: pass
 
-            # LEVEL 21: Poll every 2 seconds for up to 40 seconds
+            target_clean = ''.join(e for e in column_name.lower() if e.isalnum())
             sorted_successfully = False
-            for attempt in range(20):
-                for f in page.frames:
+            
+            # Active Polling Loop
+            for attempt in range(15):
+                for f in [page] + page.frames:
                     if f.is_detached(): continue
                     try:
-                        if f.evaluate(sort_js, column_name):
-                            sorted_successfully = True
-                            break
+                        headers = f.locator('th, [role=\"columnheader\"], td, div[class*=\"header\"], div[class*=\"Header\"]')
+                        count = headers.count()
+                        for i in range(count):
+                            loc = headers.nth(i)
+                            if loc.is_visible(timeout=100):
+                                text = loc.inner_text()
+                                clean_text = ''.join(e for e in text.lower() if e.isalnum())
+                                if target_clean in clean_text and len(clean_text) > 0:
+                                    if \"zero\" in clean_text and \"zero\" not in target_clean: continue
+                                    if \"d2\" in clean_text and \"d2\" not in target_clean: continue
+                                    if \"d6\" in clean_text and \"d6\" not in target_clean: continue
+                                    
+                                    loc.scroll_into_view_if_needed()
+                                    
+                                    # Hybrid JS Injection directly on the exact Playwright Node Reference
+                                    loc.evaluate(\"\"\"el => {
+                                        let rect = el.getBoundingClientRect();
+                                        let targetX = rect.x + rect.width - 12;
+                                        let targetY = rect.y + (rect.height / 2);
+                                        let dropEl = document.elementFromPoint(targetX, targetY) || el;
+                                        dropEl.dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
+                                        dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                                        dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                                        dropEl.click();
+                                    }\"\"\")
+                                    sorted_successfully = True
+                                    break
                     except: pass
+                    if sorted_successfully: break
                 if sorted_successfully: break
                 time.sleep(2)
                 
             if sorted_successfully:
-                print(f\"      -> Success: Triggered sort logic natively inside frame.\", flush=True)
+                print(f\"      -> Success: Triggered sort natively inside frame.\", flush=True)
                 time.sleep(2)
-                dismiss_js = r'''() => {
-                    try {
-                        let iter = document.evaluate('//text()[contains(., \"View Underlying Data\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        if (iter.snapshotLength > 0) iter.snapshotItem(0).click();
-                    } catch(e){}
-                }'''
-                for f in page.frames:
+                for f in [page] + page.frames:
                     if f.is_detached(): continue
-                    try: f.evaluate(dismiss_js)
+                    try:
+                        popups = f.get_by_text(\"View Underlying Data\", exact=False)
+                        if popups.count() > 0 and popups.first.is_visible(timeout=500):
+                            popups.first.click(force=True)
                     except: pass
                 time.sleep(10)
             else:
-                print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 40s.\", flush=True)
+                print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 30s.\", flush=True)
 
         # -----------------------------------------------
-        # 2. LEVEL 21 ACTIVE POLLING: FILTERING
+        # 2. LEVEL 22 NATIVE PLAYWRIGHT FILTERING
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
-            open_filter_js = r'''(label) => {
-                try {
-                    let iter = document.evaluate('//text()[contains(., \"' + label + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                    for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                        let el = iter.snapshotItem(i);
-                        let rect = el.getBoundingClientRect();
-                        if (rect.height > 0 && rect.width > 0) {
-                            el.scrollIntoView({behavior: 'instant', block: 'center'});
-                            let targetX = rect.x + 15;
-                            let targetY = rect.y + (rect.height / 2);
-                            let dropEl = document.elementFromPoint(targetX, targetY) || el;
-                            dropEl.dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
-                            dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
-                            dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-                            dropEl.click();
-                            return true;
-                        }
-                    }
-                } catch(e){}
-                return false;
-            }'''
-            
-            # LEVEL 21: Poll every 2 seconds for up to 40 seconds to wait for frame loads
             opened = False
-            for attempt in range(20):
-                for f in page.frames:
+            for attempt in range(15):
+                for f in [page] + page.frames:
                     if f.is_detached(): continue
                     try:
-                        if f.evaluate(open_filter_js, filter_label):
-                            opened = True
-                            break
+                        # Native Playwright Accessibility Search completely pierces fragmented HTML tags
+                        elements = f.get_by_text(filter_label, exact=False)
+                        count = elements.count()
+                        if count > 0:
+                            loc = elements.nth(count - 1)
+                            if loc.is_visible(timeout=500):
+                                loc.scroll_into_view_if_needed()
+                                loc.evaluate(\"\"\"el => {
+                                    let rect = el.getBoundingClientRect();
+                                    let targetX = rect.x + 15;
+                                    let targetY = rect.y + 35;
+                                    let dropEl = document.elementFromPoint(targetX, targetY) || el;
+                                    dropEl.dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
+                                    dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                                    dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                                    dropEl.click();
+                                }\"\"\")
+                                opened = True
+                                break
                     except: pass
                 if opened: break
                 time.sleep(2)
                 
             if not opened:
-                print(f\"      [!] Warning: Could not locate filter label '{filter_label}' after 40s. Skipping.\", flush=True)
+                print(f\"      [!] Warning: Could not locate filter label '{filter_label}' after 30s. Skipping.\", flush=True)
                 return
                 
             time.sleep(3)
 
             def click_popup_btn(btn_text):
-                click_btn_js = r'''(text) => {
-                    try {
-                        let iter = document.evaluate('//text()[contains(normalize-space(.), \"' + text + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                        for (let i = iter.snapshotLength - 1; i >= 0; i--) {
-                            let el = iter.snapshotItem(i);
-                            if (el.getBoundingClientRect().height > 0) {
-                                el.dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
-                                el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
-                                el.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
-                                el.click();
-                                return true;
-                            }
-                        }
-                    } catch(e){}
-                    return false;
-                }'''
-                
-                # Active polling for popups too
                 for _ in range(5):
-                    for f in page.frames:
+                    for f in [page] + page.frames:
                         if f.is_detached(): continue
                         try:
-                            if f.evaluate(click_btn_js, btn_text): return True
+                            locs = f.get_by_text(btn_text, exact=True)
+                            if locs.count() > 0 and locs.first.is_visible(timeout=500):
+                                locs.first.click(force=True)
+                                return True
                         except: pass
                     time.sleep(1)
                 return False
@@ -382,7 +365,6 @@ def process_reports():
             print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
             time.sleep(10) 
 
-
         # -----------------------------------------------
         # THE FAIL-SAFE LOOP
         # -----------------------------------------------
@@ -403,8 +385,6 @@ def process_reports():
                     except: pass
 
                     page.goto(report_url, wait_until='domcontentloaded')
-                    
-                    # Instead of waiting 15 seconds passively, wait just 5 then start actively polling
                     time.sleep(5)
                     
                     apply_filter('SZM:', 'Gursewak Singh')
@@ -420,59 +400,54 @@ def process_reports():
                     time.sleep(5)
 
                     # -----------------------------------------------
-                    # 3. LEVEL 21 ACTIVE POLLING: CROPPING ENGINE
+                    # 3. LEVEL 22 NATIVE PLAYWRIGHT CROPPING ENGINE
                     # -----------------------------------------------
-                    find_and_crop_js = r'''(title) => {
-                        try {
-                            let iter = document.evaluate('//text()[contains(., \"' + title + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                            let matches = [];
-                            for(let i=0; i<iter.snapshotLength; i++) {
-                                let el = iter.snapshotItem(i);
-                                if(el.offsetHeight > 0) matches.push(el);
-                            }
-                            matches.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-                            for (let match of matches) {
-                                let container = match;
-                                let depth = 0;
-                                while (container && container.parentElement && depth < 30) {
-                                    if (container.offsetHeight > 200 && container.offsetWidth > 400) {
-                                        container.scrollIntoView({behavior: 'instant', block: 'center'});
-                                        let rect = container.getBoundingClientRect();
-                                        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-                                    }
-                                    container = container.parentElement;
-                                    depth++;
-                                }
-                            }
-                        } catch(e){}
-                        return null;
-                    }'''
-
                     crop_box = None
-                    for attempt in range(10): # Poll for crop box up to 20 seconds
-                        for f in page.frames:
+                    for attempt in range(10): 
+                        for f in [page] + page.frames:
                             if f.is_detached(): continue
                             try:
-                                raw_rect = f.evaluate(find_and_crop_js, table_title)
-                                if raw_rect:
-                                    offset_x = 0
-                                    offset_y = 0
-                                    if f != page.main_frame:
-                                        try:
-                                            f_box = f.frame_element().bounding_box()
-                                            if f_box:
-                                                offset_x = f_box['x']
-                                                offset_y = f_box['y']
-                                        except: pass
-                                    vw = page.evaluate('window.innerWidth')
-                                    vh = page.evaluate('window.innerHeight')
-                                    x = max(0, raw_rect['x'] + offset_x)
-                                    y = max(0, raw_rect['y'] + offset_y)
-                                    width = min(raw_rect['width'], vw - x)
-                                    height = min(raw_rect['height'], vh - y)
-                                    
-                                    crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
-                                    break
+                                locs = f.get_by_text(table_title, exact=False)
+                                if locs.count() > 0:
+                                    loc = locs.first
+                                    if loc.is_visible(timeout=500):
+                                        loc.scroll_into_view_if_needed()
+                                        
+                                        # Use JS just to climb the tree to find the large container
+                                        raw_rect = loc.evaluate(\"\"\"el => {
+                                            let container = el;
+                                            let depth = 0;
+                                            while (container && container.parentElement && depth < 30) {
+                                                if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                                    let rect = container.getBoundingClientRect();
+                                                    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                                                }
+                                                container = container.parentElement;
+                                                depth++;
+                                            }
+                                            return null;
+                                        }\"\"\")
+                                        
+                                        if raw_rect:
+                                            offset_x = 0
+                                            offset_y = 0
+                                            if f != page.main_frame:
+                                                try:
+                                                    f_box = f.frame_element().bounding_box()
+                                                    if f_box:
+                                                        offset_x = f_box['x']
+                                                        offset_y = f_box['y']
+                                                except: pass
+                                            
+                                            vw = page.evaluate('window.innerWidth')
+                                            vh = page.evaluate('window.innerHeight')
+                                            x = max(0, raw_rect['x'] + offset_x)
+                                            y = max(0, raw_rect['y'] + offset_y)
+                                            width = min(raw_rect['width'], vw - x)
+                                            height = min(raw_rect['height'], vh - y)
+                                            
+                                            crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
+                                            break
                             except: pass
                         if crop_box: break
                         time.sleep(2)
