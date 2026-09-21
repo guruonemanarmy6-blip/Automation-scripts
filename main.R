@@ -165,6 +165,7 @@ capture_all_reports <- function() {
   auth_file <- normalizePath(file.path(getwd(), "zoho_auth.json"), winslash = "/", mustWork = FALSE)
   
   if (nzchar(cookie_data)) {
+    # Basic structural cleanup, but we do NOT modify the domains anymore
     cookie_data <- gsub('"unspecified"', '"Lax"', cookie_data)
     cookie_data <- gsub('"no_restriction"', '"None"', cookie_data)
     cookie_data <- gsub('"strict"', '"Strict"', cookie_data)
@@ -187,6 +188,7 @@ from playwright.sync_api import sync_playwright
 TARGET_DIR = r'''", target_dir_str, "'''
 REPORTS_LIST = json.loads(r'''", json_data_str, "''')
 AUTH_FILE = r'''", auth_file, "'''
+CLEAN_AUTH = os.path.join(os.getcwd(), 'clean_auth.json')
 
 captured_results = []
 
@@ -197,43 +199,53 @@ def process_reports():
             args=['--disable-blink-features=AutomationControlled']
         )
         
-        # LEVEL 29: Indian Geo-Spoofing
         context_args = {
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
             'viewport': {'width': 1920, 'height': 1080},
             'timezone_id': 'Asia/Kolkata',
-            'locale': 'en-IN',
-            'extra_http_headers': {
-                'Accept-Language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none'
-            }
+            'locale': 'en-IN'
         }
         
-        # LEVEL 29: Native Storage State Formatter
+        # -----------------------------------------------
+        # PRISTINE COOKIE PARSER
+        # -----------------------------------------------
         if os.path.exists(AUTH_FILE) and os.path.getsize(AUTH_FILE) > 0:
             try:
                 with open(AUTH_FILE, 'r') as f:
                     cookie_content = json.load(f)
                 
-                # Force the raw list into a strict Playwright format
-                if isinstance(cookie_content, list):
-                    valid_state = {'cookies': cookie_content, 'origins': []}
-                elif isinstance(cookie_content, dict) and 'cookies' in cookie_content:
-                    valid_state = cookie_content
-                else:
-                    valid_state = {'cookies': [], 'origins': []}
+                cookies_list = []
+                if isinstance(cookie_content, dict) and 'cookies' in cookie_content:
+                    cookies_list = cookie_content['cookies']
+                elif isinstance(cookie_content, list):
+                    cookies_list = cookie_content
                 
-                with open(AUTH_FILE, 'w') as f:
-                    json.dump(valid_state, f)
+                clean_cookies = []
+                for c in cookies_list:
+                    # Remove Playwright-crashing keys, but keep Domains and Signatures intact
+                    c.pop('hostOnly', None)
+                    c.pop('session', None)
+                    c.pop('storeId', None)
+                    c.pop('id', None)
+                    if 'sameSite' in c and c['sameSite'] not in ['Strict', 'Lax', 'None']:
+                        c['sameSite'] = 'None'
+                    clean_cookies.append(c)
                 
-                context_args['storage_state'] = AUTH_FILE
+                with open(CLEAN_AUTH, 'w') as f:
+                    json.dump({'cookies': clean_cookies, 'origins': []}, f)
+                
+                context_args['storage_state'] = CLEAN_AUTH
                 print(\"      -> Successfully structured JSON for Playwright Storage State.\", flush=True)
             except Exception as e:
                 print(f\"      [!] Cookie Parse Error: {e}\", flush=True)
 
         context = browser.new_context(**context_args)
+        
+        # -----------------------------------------------
+        # LEVEL 30: ANTI-BOT EVASION INJECTION
+        # -----------------------------------------------
+        context.add_init_script(\"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})\")
+        
         page = context.new_page()
         page.set_default_timeout(60000) 
         page.on('dialog', lambda dialog: dialog.accept())
@@ -289,7 +301,6 @@ def process_reports():
                 page.wait_for_timeout(10000)
             else:
                 print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 30s.\", flush=True)
-
 
         # -----------------------------------------------
         # LEVEL 25 CORS-IMMUNE FILTERING 
@@ -373,7 +384,6 @@ def process_reports():
                     report_type = item.get('type', 'standard')
 
                     file_path = os.path.join(TARGET_DIR, filename)
-                    debug_path = os.path.join(TARGET_DIR, f\"DEBUG_START_{idx+1}.png\")
                     
                     print(f'\\n======================================================', flush=True)
                     print(f'--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
@@ -382,12 +392,19 @@ def process_reports():
                     except: pass
 
                     page.goto(report_url, wait_until='domcontentloaded')
+                    
+                    # -----------------------------------------------
+                    # LEVEL 30: SSO HANDSHAKE WAITER
+                    # -----------------------------------------------
+                    print(\"      -> Checking for SSO Redirection...\", flush=True)
+                    for _ in range(15):
+                        if \"accounts.zoho\" not in page.url:
+                            break
+                        page.wait_for_timeout(2000)
+                        
                     page.wait_for_timeout(8000) 
                     
-                    # --- DIAGNOSTIC VISION ---
                     print(f\"      -> CURRENT CLOUD PAGE TITLE: '{page.title()}'\", flush=True)
-                    try: page.screenshot(path=debug_path, full_page=True)
-                    except: pass
                     
                     apply_filter('SZM:', 'Gursewak Singh')
 
