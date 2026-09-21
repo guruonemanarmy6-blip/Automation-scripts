@@ -180,6 +180,7 @@ capture_all_reports <- function() {
   py_script <- paste0("
 import json
 import os
+import time
 import traceback
 from playwright.sync_api import sync_playwright
 
@@ -211,14 +212,14 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. LEVEL 25 CORS-IMMUNE SORTING (PLAYWRIGHT LOCATORS)
+        # 1. LEVEL 25 CORS-IMMUNE SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             target_clean = ''.join(e for e in column_name.lower() if e.isalnum())
             success = False
             
-            for attempt in range(15): # 30s Polling
+            for attempt in range(15): 
                 for f in page.frames:
                     if f.is_detached(): continue
                     try:
@@ -236,11 +237,7 @@ def process_reports():
                                     if \"d6\" in clean_text and \"d6\" not in target_clean: continue
                                     
                                     loc.scroll_into_view_if_needed()
-                                    
-                                    # Inject native JS click exactly on the DOM Node Reference
                                     loc.evaluate(\"el => el.click()\")
-                                    
-                                    # Try to hit the icon specifically if it exists inside the cell
                                     icons = loc.locator('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]')
                                     if icons.count() > 0:
                                         icons.last.evaluate(\"el => el.click()\")
@@ -274,11 +271,10 @@ def process_reports():
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             opened = False
             
-            for attempt in range(15): # 30s Polling Loop
+            for attempt in range(15): 
                 for f in page.frames:
                     if f.is_detached(): continue
                     try:
-                        # Playwright native locator bypasses CORS and shadow DOMs
                         locs = f.locator(f\"//*[contains(text(), '{filter_label}')]\")
                         if locs.count() > 0:
                             loc = locs.last
@@ -351,6 +347,8 @@ def process_reports():
                     report_type = item.get('type', 'standard')
 
                     file_path = os.path.join(TARGET_DIR, filename)
+                    debug_path = os.path.join(TARGET_DIR, f\"DEBUG_START_{idx+1}.png\")
+                    
                     print(f'\\n======================================================', flush=True)
                     print(f'--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
 
@@ -358,7 +356,12 @@ def process_reports():
                     except: pass
 
                     page.goto(report_url, wait_until='domcontentloaded')
-                    page.wait_for_timeout(5000) 
+                    page.wait_for_timeout(8000) 
+                    
+                    # --- DIAGNOSTIC VISION INJECTION ---
+                    print(f\"      -> CURRENT CLOUD PAGE TITLE: '{page.title()}'\", flush=True)
+                    try: page.screenshot(path=debug_path, full_page=True)
+                    except: pass
                     
                     apply_filter('SZM:', 'Gursewak Singh')
 
