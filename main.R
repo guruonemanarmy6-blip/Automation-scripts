@@ -212,7 +212,7 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. LEVEL 22 NATIVE PLAYWRIGHT SORTING
+        # 1. LEVEL 23 NATIVE PLAYWRIGHT SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
@@ -225,8 +225,6 @@ def process_reports():
                 } catch(e) {}
             }'''
             
-            try: page.evaluate(inject_css_js)
-            except: pass
             for f in page.frames:
                 if not f.is_detached():
                     try: f.evaluate(inject_css_js)
@@ -237,7 +235,7 @@ def process_reports():
             
             # Active Polling Loop
             for attempt in range(15):
-                for f in [page] + page.frames:
+                for f in page.frames:
                     if f.is_detached(): continue
                     try:
                         headers = f.locator('th, [role=\"columnheader\"], td, div[class*=\"header\"], div[class*=\"Header\"]')
@@ -275,7 +273,7 @@ def process_reports():
             if sorted_successfully:
                 print(f\"      -> Success: Triggered sort natively inside frame.\", flush=True)
                 time.sleep(2)
-                for f in [page] + page.frames:
+                for f in page.frames:
                     if f.is_detached(): continue
                     try:
                         popups = f.get_by_text(\"View Underlying Data\", exact=False)
@@ -287,14 +285,14 @@ def process_reports():
                 print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 30s.\", flush=True)
 
         # -----------------------------------------------
-        # 2. LEVEL 22 NATIVE PLAYWRIGHT FILTERING
+        # 2. LEVEL 23 NATIVE PLAYWRIGHT FILTERING
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
             opened = False
             for attempt in range(15):
-                for f in [page] + page.frames:
+                for f in page.frames:
                     if f.is_detached(): continue
                     try:
                         # Native Playwright Accessibility Search completely pierces fragmented HTML tags
@@ -328,7 +326,7 @@ def process_reports():
 
             def click_popup_btn(btn_text):
                 for _ in range(5):
-                    for f in [page] + page.frames:
+                    for f in page.frames:
                         if f.is_detached(): continue
                         try:
                             locs = f.get_by_text(btn_text, exact=True)
@@ -400,11 +398,11 @@ def process_reports():
                     time.sleep(5)
 
                     # -----------------------------------------------
-                    # 3. LEVEL 22 NATIVE PLAYWRIGHT CROPPING ENGINE
+                    # 3. LEVEL 23 NATIVE PLAYWRIGHT CROPPING ENGINE
                     # -----------------------------------------------
                     crop_box = None
                     for attempt in range(10): 
-                        for f in [page] + page.frames:
+                        for f in page.frames:
                             if f.is_detached(): continue
                             try:
                                 locs = f.get_by_text(table_title, exact=False)
@@ -413,7 +411,6 @@ def process_reports():
                                     if loc.is_visible(timeout=500):
                                         loc.scroll_into_view_if_needed()
                                         
-                                        # Use JS just to climb the tree to find the large container
                                         raw_rect = loc.evaluate(\"\"\"el => {
                                             let container = el;
                                             let depth = 0;
