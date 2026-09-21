@@ -211,7 +211,7 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # 1. CORS-IMMUNE SORTING
+        # 1. LEVEL 20 SPA-OPTIMIZED SORTING
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
@@ -231,7 +231,7 @@ def process_reports():
                     
                     for (let el of els) {
                         let rect = el.getBoundingClientRect();
-                        if (rect.height > 5 && rect.width > 20) {
+                        if (rect.height > 2 && rect.width > 10) {
                             let text = (el.getAttribute('title') || '') + ' ' + (el.textContent || '');
                             let cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
                             
@@ -246,9 +246,10 @@ def process_reports():
                                 let targetY = rect.y + (rect.height / 2);
                                 
                                 let dropEl = document.elementFromPoint(targetX, targetY) || el;
-                                dropEl.click();
+                                dropEl.dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
                                 dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
                                 dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                                dropEl.click();
                                 return true;
                             }
                         }
@@ -272,7 +273,7 @@ def process_reports():
                 page.wait_for_timeout(1500)
                 dismiss_js = r'''() => {
                     try {
-                        let iter = document.evaluate('//*[text()=\"View Underlying Data\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        let iter = document.evaluate('//text()[contains(., \"View Underlying Data\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                         if (iter.snapshotLength > 0) iter.snapshotItem(0).click();
                     } catch(e){}
                 }'''
@@ -285,25 +286,27 @@ def process_reports():
                 print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting.\", flush=True)
 
         # -----------------------------------------------
-        # 2. CORS-IMMUNE FILTERING 
+        # 2. LEVEL 20 SPA-PIERCING FILTER ENGINE 
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             
             open_filter_js = r'''(label) => {
                 try {
-                    let iter = document.evaluate('//*[contains(text(), \"' + label + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                    // LEVEL 20 Fix: text() inside contains climbs up to the exact span parent, bypassing hidden formatting tags
+                    let iter = document.evaluate('//text()[contains(., \"' + label + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                     for (let i = iter.snapshotLength - 1; i >= 0; i--) {
                         let el = iter.snapshotItem(i);
                         let rect = el.getBoundingClientRect();
                         if (rect.height > 0 && rect.width > 0) {
                             el.scrollIntoView({behavior: 'instant', block: 'center'});
                             let targetX = rect.x + 15;
-                            let targetY = rect.y + 35;
+                            let targetY = rect.y + (rect.height / 2);
                             let dropEl = document.elementFromPoint(targetX, targetY) || el;
-                            dropEl.click();
+                            dropEl.dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
                             dropEl.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
                             dropEl.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                            dropEl.click();
                             return true;
                         }
                     }
@@ -329,10 +332,13 @@ def process_reports():
             def click_popup_btn(btn_text):
                 click_btn_js = r'''(text) => {
                     try {
-                        let iter = document.evaluate('//*[normalize-space(text())= \"' + text + '\"]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                        let iter = document.evaluate('//text()[contains(normalize-space(.), \"' + text + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                         for (let i = iter.snapshotLength - 1; i >= 0; i--) {
                             let el = iter.snapshotItem(i);
                             if (el.getBoundingClientRect().height > 0) {
+                                el.dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
+                                el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                                el.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
                                 el.click();
                                 return true;
                             }
@@ -398,6 +404,10 @@ def process_reports():
                     page.goto(report_url, wait_until='domcontentloaded')
                     page.wait_for_timeout(15000) 
                     
+                    # LEVEL 20: Network Idle Fallback allows GitHub runners extra time to download Zoho's iframes
+                    try: page.wait_for_load_state('networkidle', timeout=10000)
+                    except: pass
+                    
                     apply_filter('SZM:', 'Gursewak Singh')
 
                     if report_type == 'custom_filter':
@@ -411,11 +421,11 @@ def process_reports():
                     page.wait_for_timeout(5000)
 
                     # -----------------------------------------------
-                    # 3. CORS-IMMUNE CROPPING ENGINE
+                    # 3. LEVEL 20 SPA-PIERCING CROPPING ENGINE
                     # -----------------------------------------------
                     find_and_scroll_js = r'''(title) => {
                         try {
-                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                            let iter = document.evaluate('//text()[contains(., \"' + title + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                             let matches = [];
                             for(let i=0; i<iter.snapshotLength; i++) {
                                 let el = iter.snapshotItem(i);
@@ -448,7 +458,7 @@ def process_reports():
 
                     find_and_crop_js = r'''(title) => {
                         try {
-                            let iter = document.evaluate('//*[contains(text(), \"' + title + '\")]', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                            let iter = document.evaluate('//text()[contains(., \"' + title + '\")]/parent::*', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                             let matches = [];
                             for(let i=0; i<iter.snapshotLength; i++) {
                                 let el = iter.snapshotItem(i);
