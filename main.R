@@ -16,6 +16,24 @@ if (time_numeric < 8.0 || time_numeric > (22 + 10/60)) {
   quit(save = "no", status = 0)
 }
 
+# ==========================================
+# ZOHO MULTI-REPORT CAPTURE & WHATSAPP AUTO-SHARE
+# ==========================================
+
+# --- 0. TIME GATE (08:00 AM to 10:10 PM IST) ---
+Sys.setenv(TZ = "Asia/Kolkata")
+current_time <- as.POSIXlt(Sys.time())
+current_hour <- current_time$hour
+current_min <- current_time$min
+
+time_numeric <- current_hour + (current_min / 60)
+
+if (time_numeric < 8.0 || time_numeric > (22 + 10/60)) {
+  message(sprintf("Current time is %02d:%02d IST. Outside operating window (08:00 AM - 10:10 PM).", current_hour, current_min))
+  message("Sleeping action. No reports will be generated.")
+  quit(save = "no", status = 0)
+}
+
 # --- 1. DYNAMIC R PACKAGE INSTALLATION ---
 required_packages <- c("reticulate", "httr", "jsonlite")
 for (pkg in required_packages) {
