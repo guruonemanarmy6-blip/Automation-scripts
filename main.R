@@ -161,18 +161,8 @@ capture_all_reports <- function() {
   message(sprintf("Target directory resolved to: %s", downloads_folder))
   message("Opening background browser to process reports locally...")
   
-  cookie_data <- Sys.getenv("ZOHO_COOKIES")
-  auth_file <- normalizePath(file.path(getwd(), "zoho_auth.json"), winslash = "/", mustWork = FALSE)
-  
   z_email <- "gursewak.singh@shadowfax.in"
   z_pass <- "Guru#24$2024"
-  
-  if (nzchar(cookie_data)) {
-    cookie_data <- gsub('"unspecified"', '"Lax"', cookie_data)
-    cookie_data <- gsub('"no_restriction"', '"None"', cookie_data)
-    cookie_data <- gsub('"strict"', '"Strict"', cookie_data)
-    writeLines(cookie_data, auth_file)
-  }
   
   json_data_str <- as.character(jsonlite::toJSON(reports_config, auto_unbox = TRUE))
   target_dir_str <- normalizePath(downloads_folder, winslash = "/", mustWork = FALSE)
@@ -186,7 +176,6 @@ from playwright.sync_api import sync_playwright
 
 TARGET_DIR = r'''", target_dir_str, "'''
 REPORTS_LIST = json.loads(r'''", json_data_str, "''')
-AUTH_FILE = r'''", auth_file, "'''
 Z_EMAIL = r'''", z_email, "'''
 Z_PASS = r'''", z_pass, "'''
 
@@ -206,27 +195,15 @@ def process_reports():
             'locale': 'en-IN'
         }
         
-        if os.path.exists(AUTH_FILE) and os.path.getsize(AUTH_FILE) > 0:
-            try:
-                with open(AUTH_FILE, 'r') as f:
-                    cookie_content = json.load(f)
-                cookies_list = cookie_content.get('cookies', cookie_content) if isinstance(cookie_content, dict) else cookie_content
-                clean_cookies = []
-                for c in cookies_list:
-                    if 'expirationDate' in c: c['expires'] = float(c.pop('expirationDate'))
-                    for key in ['hostOnly', 'session', 'storeId', 'id', 'sameSite']: c.pop(key, None)
-                    if 'domain' in c and 'zoho.in' in c['domain'] and not c['domain'].startswith('.'): c['domain'] = '.' + c['domain']
-                    clean_cookies.append(c)
-                if clean_cookies:
-                    context_args['storage_state'] = {'cookies': clean_cookies, 'origins': []}
-            except Exception: pass
-        
         context = browser.new_context(**context_args)
         context.add_init_script(\"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})\")
         
         page = context.new_page()
         page.set_default_timeout(60000) 
         page.on('dialog', lambda dialog: dialog.accept())
+        
+        # State tracker to prevent infinite login loops
+        is_authenticated = False
 
         # -----------------------------------------------
         # SORTING LOGIC
@@ -277,6 +254,8 @@ def process_reports():
                             popups.first.evaluate(\"el => el.click()\")
                     except: pass
                 page.wait_for_timeout(10000)
+            else:
+                print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 30s.\", flush=True)
 
         # -----------------------------------------------
         # FILTERING LOGIC
@@ -303,6 +282,7 @@ def process_reports():
                 page.wait_for_timeout(2000)
                 
             if not opened:
+                print(f\"      [!] Warning: Could not locate filter label '{filter_label}' after 30s. Skipping.\", flush=True)
                 return
                 
             page.wait_for_timeout(2500)
@@ -369,51 +349,53 @@ def process_reports():
                     page.goto(report_url, wait_until='domcontentloaded')
                     
                     # -----------------------------------------------
-                    # SAML SSO LOGIN ENGINE
+                    # STATE-AWARE SAML LOGIN
                     # -----------------------------------------------
-                    for _ in range(15):
-                        if \"accounts.zoho\" not in page.url:
-                            break
-                        page.wait_for_timeout(2000)
+                    if not is_authenticated:
+                        page.wait_for_timeout(5000)
+                        if \"accounts.zoho\" in page.url or \"google.com\" in page.url:
+                            print(\"      -> Detected Login Screen. Initiating automated SAML login...\", flush=True)
+                            try:
+                                saml_btn = page.locator(\"text='SAML - Zoho - Google SSO'\")
+                                if saml_btn.count() > 0:
+                                    print(\"         -> Clicking 'SAML - Zoho - Google SSO' button...\", flush=True)
+                                    saml_btn.first.click()
+                                    page.wait_for_timeout(6000)
+                                    
+                                email_input = page.locator(\"input[type='email']\")
+                                if email_input.count() > 0 and email_input.first.is_visible(timeout=5000):
+                                    print(\"         -> Entering Google SSO Email...\", flush=True)
+                                    email_input.first.fill(Z_EMAIL)
+                                    page.keyboard.press(\"Enter\")
+                                    page.wait_for_timeout(4000)
+                                
+                                pass_input = page.locator(\"input[type='password']\")
+                                if pass_input.count() > 0 and pass_input.first.is_visible(timeout=5000):
+                                    print(\"         -> Entering Google SSO Password...\", flush=True)
+                                    pass_input.first.fill(Z_PASS)
+                                    page.keyboard.press(\"Enter\")
+                                    page.wait_for_timeout(8000)
+                                    
+                                for _ in range(15):
+                                    if \"analytics.zoho\" in page.url:
+                                        print(\"         -> Successfully authenticated via Google SAML.\", flush=True)
+                                        is_authenticated = True
+                                        break
+                                    page.wait_for_timeout(2000)
+                                    
+                            except Exception as e:
+                                print(f\"         [!] SAML Automation Error: {e}\", flush=True)
                         
-                    if \"accounts.zoho\" in page.url or \"google.com\" in page.url:
-                        print(\"      -> Detected Login Screen. Initiating automated SAML login...\", flush=True)
-                        try:
-                            # Step 1: Click the specific SAML SSO button from the video
-                            saml_btn = page.locator(\"text='SAML - Zoho - Google SSO'\")
-                            if saml_btn.count() > 0:
-                                print(\"         -> Clicking 'SAML - Zoho - Google SSO' button...\", flush=True)
-                                saml_btn.first.click()
-                                page.wait_for_timeout(6000)
-                                
-                            # Step 2: Handle Google Email Input
-                            email_input = page.locator(\"input[type='email']\")
-                            if email_input.count() > 0 and email_input.first.is_visible(timeout=5000):
-                                print(\"         -> Entering Google SSO Email...\", flush=True)
-                                email_input.first.fill(Z_EMAIL)
-                                page.keyboard.press(\"Enter\")
-                                page.wait_for_timeout(4000)
-                            
-                            # Step 3: Handle Google Password Input
-                            pass_input = page.locator(\"input[type='password']\")
-                            if pass_input.count() > 0 and pass_input.first.is_visible(timeout=5000):
-                                print(\"         -> Entering Google SSO Password...\", flush=True)
-                                pass_input.first.fill(Z_PASS)
-                                page.keyboard.press(\"Enter\")
-                                page.wait_for_timeout(8000)
-                                
-                            # Wait for redirect back to Zoho
-                            for _ in range(15):
-                                if \"analytics.zoho\" in page.url:
-                                    print(\"         -> Successfully authenticated via Google SAML.\", flush=True)
-                                    break
-                                page.wait_for_timeout(2000)
-                                
-                        except Exception as e:
-                            print(f\"         [!] SAML Automation Error: {e}\", flush=True)
+                        # Massive stabilizer wait for the first heavy load post-login
+                        print(\"      -> Waiting 18 seconds for Zoho Dashboard to fully mount...\", flush=True)
+                        page.wait_for_timeout(18000) 
+                    else:
+                        # Shorter wait for standard tab switching
+                        page.wait_for_timeout(8000)
                     
-                    page.wait_for_timeout(8000) 
-                    
+                    # -----------------------------------------------
+                    # DATA MANIPULATION
+                    # -----------------------------------------------
                     apply_filter('SZM:', 'Gursewak Singh')
 
                     if report_type == 'custom_filter':
