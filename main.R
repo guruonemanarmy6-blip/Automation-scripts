@@ -164,15 +164,14 @@ capture_all_reports <- function() {
   cookie_data <- Sys.getenv("ZOHO_COOKIES")
   auth_file <- normalizePath(file.path(getwd(), "zoho_auth.json"), winslash = "/", mustWork = FALSE)
   
+  z_email <- "gursewak.singh@shadowfax.in"
+  z_pass <- "Guru#24$2024"
+  
   if (nzchar(cookie_data)) {
-    # Basic structural cleanup, but we do NOT modify the domains anymore
     cookie_data <- gsub('"unspecified"', '"Lax"', cookie_data)
     cookie_data <- gsub('"no_restriction"', '"None"', cookie_data)
     cookie_data <- gsub('"strict"', '"Strict"', cookie_data)
     writeLines(cookie_data, auth_file)
-    message("Successfully loaded Zoho Cookies from GitHub Secrets.")
-  } else {
-    message("WARNING: ZOHO_COOKIES secret is empty or missing!")
   }
   
   json_data_str <- as.character(jsonlite::toJSON(reports_config, auto_unbox = TRUE))
@@ -188,7 +187,8 @@ from playwright.sync_api import sync_playwright
 TARGET_DIR = r'''", target_dir_str, "'''
 REPORTS_LIST = json.loads(r'''", json_data_str, "''')
 AUTH_FILE = r'''", auth_file, "'''
-CLEAN_AUTH = os.path.join(os.getcwd(), 'clean_auth.json')
+Z_EMAIL = r'''", z_email, "'''
+Z_PASS = r'''", z_pass, "'''
 
 captured_results = []
 
@@ -206,44 +206,22 @@ def process_reports():
             'locale': 'en-IN'
         }
         
-        # -----------------------------------------------
-        # PRISTINE COOKIE PARSER
-        # -----------------------------------------------
         if os.path.exists(AUTH_FILE) and os.path.getsize(AUTH_FILE) > 0:
             try:
                 with open(AUTH_FILE, 'r') as f:
                     cookie_content = json.load(f)
-                
-                cookies_list = []
-                if isinstance(cookie_content, dict) and 'cookies' in cookie_content:
-                    cookies_list = cookie_content['cookies']
-                elif isinstance(cookie_content, list):
-                    cookies_list = cookie_content
-                
+                cookies_list = cookie_content.get('cookies', cookie_content) if isinstance(cookie_content, dict) else cookie_content
                 clean_cookies = []
                 for c in cookies_list:
-                    # Remove Playwright-crashing keys, but keep Domains and Signatures intact
-                    c.pop('hostOnly', None)
-                    c.pop('session', None)
-                    c.pop('storeId', None)
-                    c.pop('id', None)
-                    if 'sameSite' in c and c['sameSite'] not in ['Strict', 'Lax', 'None']:
-                        c['sameSite'] = 'None'
+                    if 'expirationDate' in c: c['expires'] = float(c.pop('expirationDate'))
+                    for key in ['hostOnly', 'session', 'storeId', 'id', 'sameSite']: c.pop(key, None)
+                    if 'domain' in c and 'zoho.in' in c['domain'] and not c['domain'].startswith('.'): c['domain'] = '.' + c['domain']
                     clean_cookies.append(c)
-                
-                with open(CLEAN_AUTH, 'w') as f:
-                    json.dump({'cookies': clean_cookies, 'origins': []}, f)
-                
-                context_args['storage_state'] = CLEAN_AUTH
-                print(\"      -> Successfully structured JSON for Playwright Storage State.\", flush=True)
-            except Exception as e:
-                print(f\"      [!] Cookie Parse Error: {e}\", flush=True)
-
-        context = browser.new_context(**context_args)
+                if clean_cookies:
+                    context_args['storage_state'] = {'cookies': clean_cookies, 'origins': []}
+            except Exception: pass
         
-        # -----------------------------------------------
-        # LEVEL 30: ANTI-BOT EVASION INJECTION
-        # -----------------------------------------------
+        context = browser.new_context(**context_args)
         context.add_init_script(\"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})\")
         
         page = context.new_page()
@@ -251,7 +229,7 @@ def process_reports():
         page.on('dialog', lambda dialog: dialog.accept())
 
         # -----------------------------------------------
-        # LEVEL 25 CORS-IMMUNE SORTING
+        # SORTING LOGIC
         # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
@@ -299,11 +277,9 @@ def process_reports():
                             popups.first.evaluate(\"el => el.click()\")
                     except: pass
                 page.wait_for_timeout(10000)
-            else:
-                print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 30s.\", flush=True)
 
         # -----------------------------------------------
-        # LEVEL 25 CORS-IMMUNE FILTERING 
+        # FILTERING LOGIC
         # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
@@ -327,7 +303,6 @@ def process_reports():
                 page.wait_for_timeout(2000)
                 
             if not opened:
-                print(f\"      [!] Warning: Could not locate filter label '{filter_label}' after 30s. Skipping.\", flush=True)
                 return
                 
             page.wait_for_timeout(2500)
@@ -394,17 +369,50 @@ def process_reports():
                     page.goto(report_url, wait_until='domcontentloaded')
                     
                     # -----------------------------------------------
-                    # LEVEL 30: SSO HANDSHAKE WAITER
+                    # SAML SSO LOGIN ENGINE
                     # -----------------------------------------------
-                    print(\"      -> Checking for SSO Redirection...\", flush=True)
                     for _ in range(15):
                         if \"accounts.zoho\" not in page.url:
                             break
                         page.wait_for_timeout(2000)
                         
-                    page.wait_for_timeout(8000) 
+                    if \"accounts.zoho\" in page.url or \"google.com\" in page.url:
+                        print(\"      -> Detected Login Screen. Initiating automated SAML login...\", flush=True)
+                        try:
+                            # Step 1: Click the specific SAML SSO button from the video
+                            saml_btn = page.locator(\"text='SAML - Zoho - Google SSO'\")
+                            if saml_btn.count() > 0:
+                                print(\"         -> Clicking 'SAML - Zoho - Google SSO' button...\", flush=True)
+                                saml_btn.first.click()
+                                page.wait_for_timeout(6000)
+                                
+                            # Step 2: Handle Google Email Input
+                            email_input = page.locator(\"input[type='email']\")
+                            if email_input.count() > 0 and email_input.first.is_visible(timeout=5000):
+                                print(\"         -> Entering Google SSO Email...\", flush=True)
+                                email_input.first.fill(Z_EMAIL)
+                                page.keyboard.press(\"Enter\")
+                                page.wait_for_timeout(4000)
+                            
+                            # Step 3: Handle Google Password Input
+                            pass_input = page.locator(\"input[type='password']\")
+                            if pass_input.count() > 0 and pass_input.first.is_visible(timeout=5000):
+                                print(\"         -> Entering Google SSO Password...\", flush=True)
+                                pass_input.first.fill(Z_PASS)
+                                page.keyboard.press(\"Enter\")
+                                page.wait_for_timeout(8000)
+                                
+                            # Wait for redirect back to Zoho
+                            for _ in range(15):
+                                if \"analytics.zoho\" in page.url:
+                                    print(\"         -> Successfully authenticated via Google SAML.\", flush=True)
+                                    break
+                                page.wait_for_timeout(2000)
+                                
+                        except Exception as e:
+                            print(f\"         [!] SAML Automation Error: {e}\", flush=True)
                     
-                    print(f\"      -> CURRENT CLOUD PAGE TITLE: '{page.title()}'\", flush=True)
+                    page.wait_for_timeout(8000) 
                     
                     apply_filter('SZM:', 'Gursewak Singh')
 
@@ -419,7 +427,7 @@ def process_reports():
                     page.wait_for_timeout(5000)
 
                     # -----------------------------------------------
-                    # CORS-IMMUNE CROPPING ENGINE
+                    # CROPPING ENGINE
                     # -----------------------------------------------
                     crop_box = None
                     for attempt in range(10): 
@@ -431,7 +439,6 @@ def process_reports():
                                     loc = locs.first
                                     if loc.is_visible(timeout=50):
                                         loc.scroll_into_view_if_needed()
-                                        
                                         raw_rect = loc.evaluate(\"\"\"el => {
                                             let container = el;
                                             let depth = 0;
