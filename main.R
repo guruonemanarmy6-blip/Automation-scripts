@@ -344,27 +344,29 @@ def process_reports():
 
                     page.goto(report_url, wait_until='domcontentloaded')
                     
+                    # -----------------------------------------------
+                    # LEVEL 38: STRICT STATE-AWARE SAML LOGIN
+                    # -----------------------------------------------
                     if not is_authenticated:
                         page.wait_for_timeout(5000)
-                        if \"accounts.zoho\" in page.url or \"google.com\" in page.url:
+                        
+                        # Only trigger if we are definitively on a login page, not a dashboard
+                        if page.url.startswith(\"https://accounts.zoho.in\") or \"google.com\" in page.url:
                             print(\"      -> Detected Login Screen. Initiating Human-Mimic Login...\", flush=True)
                             try:
-                                # LEVEL 37: Robust Zoho Native Form Handling
-                                if \"accounts.zoho\" in page.url:
+                                if page.url.startswith(\"https://accounts.zoho.in\"):
                                     zoho_input = page.locator(\"input#login_id, input[name='LOGIN_ID'], input[type='email']\")
                                     if zoho_input.count() > 0 and zoho_input.first.is_visible(timeout=5000):
                                         print(\"         -> Typing email into Zoho gate...\", flush=True)
                                         zoho_input.first.click()
-                                        # Press sequentially forces React to register the keystrokes
                                         zoho_input.first.press_sequentially(Z_EMAIL, delay=100)
                                         page.wait_for_timeout(1500)
                                         page.keyboard.press(\"Enter\")
-                                        page.wait_for_timeout(6000)
+                                        page.wait_for_timeout(8000)
 
-                                # Handle Google Auth if redirected
                                 if \"google.com\" in page.url or \"saml\" in page.url.lower():
                                     google_email = page.locator(\"input[type='email']\")
-                                    if google_email.count() > 0 and google_email.first.is_visible(timeout=5000):
+                                    if google_email.count() > 0 and google_email.first.is_visible(timeout=3000):
                                         print(\"         -> Typing Google SSO Email...\", flush=True)
                                         google_email.first.click()
                                         google_email.first.press_sequentially(Z_EMAIL, delay=50)
@@ -373,27 +375,28 @@ def process_reports():
                                         page.wait_for_timeout(5000)
                                     
                                     google_pass = page.locator(\"input[type='password']\")
-                                    if google_pass.count() > 0 and google_pass.first.is_visible(timeout=5000):
+                                    if google_pass.count() > 0 and google_pass.first.is_visible(timeout=8000):
                                         print(\"         -> Typing Google SSO Password...\", flush=True)
                                         google_pass.first.click()
                                         google_pass.first.press_sequentially(Z_PASS, delay=50)
                                         page.wait_for_timeout(1000)
                                         page.keyboard.press(\"Enter\")
-                                        page.wait_for_timeout(8000)
+                                        page.wait_for_timeout(10000)
                                         
-                                for _ in range(15):
-                                    if \"analytics.zoho\" in page.url:
+                                for _ in range(20):
+                                    # Strict enforcement: MUST start with analytics workspace, ignoring query redirects
+                                    if page.url.startswith(\"https://analytics.zoho.in/workspace\"):
                                         print(\"         -> Successfully authenticated via SAML.\", flush=True)
                                         is_authenticated = True
                                         break
                                     page.wait_for_timeout(2000)
                                     
                                 if not is_authenticated:
-                                    print(\"         [!] Failed to route to dashboard. Checking for blocks...\", flush=True)
+                                    print(\"         [!] Failed to route to dashboard. Taking debug screenshot...\", flush=True)
                                     debug_path = os.path.join(TARGET_DIR, '0_DEBUG_LOGIN_FAILED.png')
                                     page.screenshot(path=debug_path, full_page=True)
                                     captured_results.append({
-                                        'index': 0, 'tab': 'DEBUG', 'title': 'LOGIN FAILED', 'file': '0_DEBUG_LOGIN_FAILED.png', 'path': debug_path, 'status': 'DEBUG'
+                                        'index': 0, 'tab': 'DEBUG', 'title': 'LOGIN FAILED', 'file': '0_DEBUG_LOGIN_FAILED.png', 'path': debug_path, 'status': 'DEBUG SENT'
                                     })
                                     
                             except Exception as e:
