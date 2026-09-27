@@ -202,7 +202,6 @@ def process_reports():
         page.set_default_timeout(60000) 
         page.on('dialog', lambda dialog: dialog.accept())
         
-        # State tracker to prevent infinite login loops
         is_authenticated = False
 
         # -----------------------------------------------
@@ -249,7 +248,7 @@ def process_reports():
                 for f in page.frames:
                     if f.is_detached(): continue
                     try:
-                        popups = f.locator(\"text='View Underlying Data'\")
+                        popups = f.get_by_text('View Underlying Data', exact=False)
                         if popups.count() > 0:
                             popups.first.evaluate(\"el => el.click()\")
                     except: pass
@@ -268,14 +267,17 @@ def process_reports():
                 for f in page.frames:
                     if f.is_detached(): continue
                     try:
-                        locs = f.locator(f\"//*[contains(text(), '{filter_label}')]\")
-                        if locs.count() > 0:
-                            loc = locs.last
-                            if loc.is_visible(timeout=50):
-                                loc.scroll_into_view_if_needed()
-                                loc.evaluate(\"el => el.click()\")
-                                opened = True
-                                break
+                        # Ensure we check visibility and use get_by_text which is robust against shadow DOMs
+                        locs = f.get_by_text(filter_label, exact=False)
+                        count = locs.count()
+                        if count > 0:
+                            for i in range(count -1, -1, -1):
+                                loc = locs.nth(i)
+                                if loc.is_visible(timeout=100):
+                                    loc.scroll_into_view_if_needed()
+                                    loc.evaluate(\"el => el.click()\")
+                                    opened = True
+                                    break
                     except: pass
                     if opened: break
                 if opened: break
@@ -292,10 +294,14 @@ def process_reports():
                     for f in page.frames:
                         if f.is_detached(): continue
                         try:
-                            btns = f.locator(f\"text='{btn_text}'\")
-                            if btns.count() > 0 and btns.first.is_visible(timeout=50):
-                                btns.first.evaluate(\"el => el.click()\")
-                                return True
+                            btns = f.get_by_text(btn_text, exact=True)
+                            count = btns.count()
+                            if count > 0:
+                                for i in range(count -1, -1, -1):
+                                    btn = btns.nth(i)
+                                    if btn.is_visible(timeout=100):
+                                        btn.evaluate(\"el => el.click()\")
+                                        return True
                         except: pass
                     page.wait_for_timeout(1000)
                 return False
@@ -386,11 +392,14 @@ def process_reports():
                             except Exception as e:
                                 print(f\"         [!] SAML Automation Error: {e}\", flush=True)
                         
-                        # Massive stabilizer wait for the first heavy load post-login
                         print(\"      -> Waiting 18 seconds for Zoho Dashboard to fully mount...\", flush=True)
                         page.wait_for_timeout(18000) 
+                        
+                        print(f\"      -> Forcing Re-Navigation to restore the Deep Link to: {tab_name}...\", flush=True)
+                        page.goto(report_url, wait_until='domcontentloaded')
+                        page.wait_for_timeout(10000)
+                        
                     else:
-                        # Shorter wait for standard tab switching
                         page.wait_for_timeout(8000)
                     
                     # -----------------------------------------------
@@ -416,7 +425,7 @@ def process_reports():
                         for f in page.frames:
                             if f.is_detached(): continue
                             try:
-                                locs = f.locator(f\"//*[contains(text(), '{table_title}')]\")
+                                locs = f.get_by_text(table_title, exact=False)
                                 if locs.count() > 0:
                                     loc = locs.first
                                     if loc.is_visible(timeout=50):
