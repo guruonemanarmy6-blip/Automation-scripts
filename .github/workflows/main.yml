@@ -1,35 +1,23 @@
-name: Hourly Automation Script
+name: Daily Zoho Reports
 
 on:
   schedule:
-    - cron: '30 2-16 * * *'
-  workflow_dispatch:
+    - cron: '30 2 * * *' # 08:00 AM IST
+  workflow_dispatch: # Allows you to run it manually
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up R
+      - uses: actions/checkout@v3
+      
+      - name: Setup R
         uses: r-lib/actions/setup-r@v2
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install Playwright and Browsers
-        run: |
-          python -m pip install --upgrade pip
-          pip install playwright
-          python -m playwright install --with-deps chromium
-
-      - name: Run script
+        
+      - name: Install System Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+        
+      - name: Run Main Script
         env:
-          ZOHO_COOKIES: ${{ secrets.ZOHO_COOKIES }}
-          ZOHO_API_TOKEN: ${{ secrets.ZOHO_API_TOKEN }}
-          WHATSAPP_CHAT_ID: ${{ secrets.WHATSAPP_CHAT_ID }}
+          ZOHO_AUTH_JSON: ${{ secrets.ZOHO_AUTH_JSON }} # THIS LINE IS CRITICAL
         run: Rscript main.R
