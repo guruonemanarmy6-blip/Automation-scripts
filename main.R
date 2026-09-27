@@ -62,6 +62,96 @@ reports_config <- list(
     title = "Hub Wise Summary 3.0", 
     filename = "2_hub_wise_summary.png",
     sort_column = "Attempt%"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007275108264", 
+    tab = "FASR",    
+    title = "Hub wise - FASR 3.0", 
+    filename = "3_overall_fasr.png",
+    sort_column = "FASR"
+  ),
+  list(
+    type = "custom_filter",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007275108264", 
+    tab = "FASR",    
+    title = "Hub wise - FASR 3.0", 
+    filename = "4_ftpl_cod_fasr.png",
+    client_tag = "FTPL",
+    payment_mode = "COD",
+    sort_column = "FASR"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007373618153", 
+    tab = "FPSR",    
+    title = "HUB wise- FPSR 3.0", 
+    filename = "5_overall_fpsr.png",
+    sort_column = "FPSR"
+  ),
+  list(
+    type = "custom_filter",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007373618153", 
+    tab = "FPSR",    
+    title = "HUB wise- FPSR 3.0", 
+    filename = "6_ftpl_fpsr.png",
+    client = "FTPL",
+    sort_column = "FPSR"
+  ),
+  list(
+    type = "custom_filter",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007398452009", 
+    tab = "C2",    
+    title = "Hub Wise Summary 3.0 - C2", 
+    filename = "7_c2_prepaid_fasr.png",
+    payment_mode = "PREPAID",
+    sort_column = "FASR" 
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007723086155", 
+    tab = "Shipment Tally",    
+    title = "Hub-Wise : Shipment Tally", 
+    filename = "8_shipment_tally.png",
+    sort_column = "Adherence %"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007446940689", 
+    tab = "FOD",    
+    title = "Hub Wise FOD 3.0", 
+    filename = "9_hub_wise_fod.png"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000001470070/view/159245000016852015", 
+    tab = "Network Load",    
+    title = "Network load", 
+    filename = "10_network_load.png",
+    sort_column = "Total"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000286997288/view/159245007373476550",
+    tab = "DSR",
+    title = "Hub wise - DSR",
+    filename = "11_hub_wise_dsr.png"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000001470070/view/159245005630148864",
+    tab = "Hub Wise NC", 
+    title = "Hub Wise NC",
+    filename = "12_hub_wise_nc.png",
+    sort_column = "hub"
+  ),
+  list(
+    type = "standard",
+    url = "https://analytics.zoho.in/workspace/159245000001470070/view/159245002188310288",
+    tab = "Lead-Tracking-Dashboard", 
+    title = "Hub-wise-leads",
+    filename = "13_hub_wise_leads.png",
+    sort_column = "Hub"
   )
 )
 
@@ -114,81 +204,282 @@ def process_reports():
         
         is_authenticated = False
 
+        def apply_sort(column_name):
+            print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
+            target_clean = ''.join(e for e in column_name.lower() if e.isalnum())
+            success = False
+            
+            for attempt in range(15): 
+                for f in page.frames:
+                    if f.is_detached(): continue
+                    try:
+                        headers = f.locator('th, [role=\"columnheader\"], td, div[class*=\"header\"], div[class*=\"Header\"]')
+                        count = headers.count()
+                        for i in range(count):
+                            loc = headers.nth(i)
+                            if loc.is_visible(timeout=50):
+                                text = loc.inner_text()
+                                clean_text = ''.join(e for e in text.lower() if e.isalnum())
+                                
+                                if target_clean in clean_text and len(clean_text) > 0:
+                                    if \"zero\" in clean_text and \"zero\" not in target_clean: continue
+                                    if \"d2\" in clean_text and \"d2\" not in target_clean: continue
+                                    if \"d6\" in clean_text and \"d6\" not in target_clean: continue
+                                    
+                                    loc.scroll_into_view_if_needed()
+                                    loc.evaluate(\"el => el.click()\")
+                                    icons = loc.locator('svg, i, span[class*=\"icon\"], span[class*=\"sort\"], span[class*=\"arrow\"]')
+                                    if icons.count() > 0:
+                                        icons.last.evaluate(\"el => el.click()\")
+                                        
+                                    success = True
+                                    break
+                    except: pass
+                    if success: break
+                if success: break
+                page.wait_for_timeout(2000)
+                
+            if success:
+                print(f\"      -> Success: Triggered sort logic natively inside frame.\", flush=True)
+                page.wait_for_timeout(1500)
+                for f in page.frames:
+                    if f.is_detached(): continue
+                    try:
+                        popups = f.get_by_text('View Underlying Data', exact=False)
+                        if popups.count() > 0:
+                            popups.first.evaluate(\"el => el.click()\")
+                    except: pass
+                page.wait_for_timeout(10000)
+            else:
+                print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 30s.\", flush=True)
+
+        def apply_filter(filter_label, filter_value):
+            print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
+            opened = False
+            
+            for attempt in range(15): 
+                for f in page.frames:
+                    if f.is_detached(): continue
+                    try:
+                        locs = f.get_by_text(filter_label, exact=False)
+                        count = locs.count()
+                        if count > 0:
+                            for i in range(count -1, -1, -1):
+                                loc = locs.nth(i)
+                                if loc.is_visible(timeout=100):
+                                    loc.scroll_into_view_if_needed()
+                                    loc.evaluate(\"el => el.click()\")
+                                    opened = True
+                                    break
+                    except: pass
+                    if opened: break
+                if opened: break
+                page.wait_for_timeout(2000)
+                
+            if not opened:
+                print(f\"      [!] Warning: Could not locate filter label '{filter_label}' after 30s. Skipping.\", flush=True)
+                return
+                
+            page.wait_for_timeout(2500)
+
+            def click_popup_btn(btn_text):
+                for _ in range(5):
+                    for f in page.frames:
+                        if f.is_detached(): continue
+                        try:
+                            btns = f.get_by_text(btn_text, exact=True)
+                            count = btns.count()
+                            if count > 0:
+                                for i in range(count -1, -1, -1):
+                                    btn = btns.nth(i)
+                                    if btn.is_visible(timeout=100):
+                                        btn.evaluate(\"el => el.click()\")
+                                        return True
+                        except: pass
+                    page.wait_for_timeout(1000)
+                return False
+
+            print(\"      -> Clicking 'Clear' defaults...\", flush=True)
+            if not click_popup_btn(\"Clear\"):
+                click_popup_btn(\"Select None\")
+            page.wait_for_timeout(1000)
+
+            print(f\"      -> Typing '{filter_value}'...\", flush=True)
+            page.keyboard.type(filter_value)
+            page.wait_for_timeout(1500)
+
+            print(f\"      -> Selecting '{filter_value}' box...\", flush=True)
+            if not click_popup_btn(filter_value):
+                page.keyboard.press(\"ArrowDown\")
+                page.wait_for_timeout(500)
+                page.keyboard.press(\"Space\")
+            page.wait_for_timeout(1000)
+
+            print(\"      -> Clicking 'OK' to lock filter...\", flush=True)
+            if not click_popup_btn(\"OK\"):
+                if not click_popup_btn(\"Apply\"):
+                    page.keyboard.press(\"Enter\")
+            
+            page.wait_for_timeout(500)
+            page.keyboard.press(\"Escape\") 
+            print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
+            page.wait_for_timeout(10000) 
+
         try:
             for idx, item in enumerate(REPORTS_LIST):
                 try:
                     report_url = item['url']
                     tab_name = item['tab']
+                    table_title = item['title']
                     filename = item['filename']
+                    report_type = item.get('type', 'standard')
 
                     file_path = os.path.join(TARGET_DIR, filename)
                     
                     print(f'\\n======================================================', flush=True)
                     print(f'--- [{idx+1}/{len(REPORTS_LIST)}] Loading Tab: \"{tab_name}\" | Saving to: \"{filename}\" ---', flush=True)
 
+                    try: page.evaluate(\"window.onbeforeunload = null;\")
+                    except: pass
+
                     page.goto(report_url, wait_until='domcontentloaded')
                     
-                    # -----------------------------------------------
-                    # STATE-AWARE SAML LOGIN
-                    # -----------------------------------------------
                     if not is_authenticated:
                         page.wait_for_timeout(5000)
                         if \"accounts.zoho\" in page.url or \"google.com\" in page.url:
-                            print(\"      -> Detected Login Screen. Initiating automated SAML login...\", flush=True)
+                            print(\"      -> Detected Login Screen. Initiating Human-Mimic Login...\", flush=True)
                             try:
-                                saml_btn = page.locator(\"text='SAML - Zoho - Google SSO'\")
-                                if saml_btn.count() > 0:
-                                    print(\"         -> Clicking 'SAML - Zoho - Google SSO' button...\", flush=True)
-                                    saml_btn.first.click()
-                                    page.wait_for_timeout(6000)
+                                # LEVEL 37: Robust Zoho Native Form Handling
+                                if \"accounts.zoho\" in page.url:
+                                    zoho_input = page.locator(\"input#login_id, input[name='LOGIN_ID'], input[type='email']\")
+                                    if zoho_input.count() > 0 and zoho_input.first.is_visible(timeout=5000):
+                                        print(\"         -> Typing email into Zoho gate...\", flush=True)
+                                        zoho_input.first.click()
+                                        # Press sequentially forces React to register the keystrokes
+                                        zoho_input.first.press_sequentially(Z_EMAIL, delay=100)
+                                        page.wait_for_timeout(1500)
+                                        page.keyboard.press(\"Enter\")
+                                        page.wait_for_timeout(6000)
+
+                                # Handle Google Auth if redirected
+                                if \"google.com\" in page.url or \"saml\" in page.url.lower():
+                                    google_email = page.locator(\"input[type='email']\")
+                                    if google_email.count() > 0 and google_email.first.is_visible(timeout=5000):
+                                        print(\"         -> Typing Google SSO Email...\", flush=True)
+                                        google_email.first.click()
+                                        google_email.first.press_sequentially(Z_EMAIL, delay=50)
+                                        page.wait_for_timeout(1000)
+                                        page.keyboard.press(\"Enter\")
+                                        page.wait_for_timeout(5000)
                                     
-                                email_input = page.locator(\"input[type='email']\")
-                                if email_input.count() > 0 and email_input.first.is_visible(timeout=5000):
-                                    print(\"         -> Entering Google SSO Email...\", flush=True)
-                                    email_input.first.fill(Z_EMAIL)
-                                    page.keyboard.press(\"Enter\")
-                                    page.wait_for_timeout(4000)
-                                
-                                pass_input = page.locator(\"input[type='password']\")
-                                if pass_input.count() > 0 and pass_input.first.is_visible(timeout=5000):
-                                    print(\"         -> Entering Google SSO Password...\", flush=True)
-                                    pass_input.first.fill(Z_PASS)
-                                    page.keyboard.press(\"Enter\")
-                                    page.wait_for_timeout(8000)
-                                    
-                                # --- LEVEL 36: THE VISUAL DIAGNOSTIC OVERRIDE ---
-                                debug_login_path = os.path.join(TARGET_DIR, '0_DEBUG_LOGIN_STATE.png')
-                                page.screenshot(path=debug_login_path, full_page=True)
-                                captured_results.append({
-                                    'index': 0, 'tab': 'DEBUG', 'title': 'CLOUD LOGIN SECURITY CHECK', 'file': '0_DEBUG_LOGIN_STATE.png', 'path': debug_login_path, 'status': 'DEBUG SENT'
-                                })
-                                print(\"         -> [!] DEBUG: Took a photograph of the post-password screen and dispatched to WhatsApp.\", flush=True)
-                                
+                                    google_pass = page.locator(\"input[type='password']\")
+                                    if google_pass.count() > 0 and google_pass.first.is_visible(timeout=5000):
+                                        print(\"         -> Typing Google SSO Password...\", flush=True)
+                                        google_pass.first.click()
+                                        google_pass.first.press_sequentially(Z_PASS, delay=50)
+                                        page.wait_for_timeout(1000)
+                                        page.keyboard.press(\"Enter\")
+                                        page.wait_for_timeout(8000)
+                                        
                                 for _ in range(15):
                                     if \"analytics.zoho\" in page.url:
-                                        print(\"         -> Successfully authenticated via Google SAML.\", flush=True)
+                                        print(\"         -> Successfully authenticated via SAML.\", flush=True)
                                         is_authenticated = True
                                         break
                                     page.wait_for_timeout(2000)
                                     
+                                if not is_authenticated:
+                                    print(\"         [!] Failed to route to dashboard. Checking for blocks...\", flush=True)
+                                    debug_path = os.path.join(TARGET_DIR, '0_DEBUG_LOGIN_FAILED.png')
+                                    page.screenshot(path=debug_path, full_page=True)
+                                    captured_results.append({
+                                        'index': 0, 'tab': 'DEBUG', 'title': 'LOGIN FAILED', 'file': '0_DEBUG_LOGIN_FAILED.png', 'path': debug_path, 'status': 'DEBUG'
+                                    })
+                                    
                             except Exception as e:
                                 print(f\"         [!] SAML Automation Error: {e}\", flush=True)
                         
-                        print(\"      -> Waiting 18 seconds for Zoho Dashboard to fully mount...\", flush=True)
-                        page.wait_for_timeout(18000) 
-                        
-                        print(f\"      -> Forcing Re-Navigation to restore the Deep Link to: {tab_name}...\", flush=True)
-                        page.goto(report_url, wait_until='domcontentloaded')
-                        page.wait_for_timeout(10000)
+                        if is_authenticated:
+                            print(\"      -> Waiting 18 seconds for Zoho Dashboard to fully mount...\", flush=True)
+                            page.wait_for_timeout(18000) 
+                            
+                            print(f\"      -> Forcing Re-Navigation to restore the Deep Link to: {tab_name}...\", flush=True)
+                            page.goto(report_url, wait_until='domcontentloaded')
+                            page.wait_for_timeout(10000)
                         
                     else:
                         page.wait_for_timeout(8000)
                     
-                    # -----------------------------------------------
-                    # DATA MANIPULATION (Skipped for Debug Truncation)
-                    # -----------------------------------------------
-                    print(\"      -> Script deliberately halted to await WhatsApp diagnostic review.\", flush=True)
-                    break
+                    apply_filter('SZM:', 'Gursewak Singh')
+
+                    if report_type == 'custom_filter':
+                        if 'client_tag' in item: apply_filter('client_tags:', item['client_tag'])
+                        if 'payment_mode' in item: apply_filter('payment_mode:', item['payment_mode'])
+                        if 'client' in item: apply_filter('client:', item['client'])
+
+                    if 'sort_column' in item:
+                        apply_sort(item['sort_column'])
+                        
+                    page.wait_for_timeout(5000)
+
+                    crop_box = None
+                    for attempt in range(10): 
+                        for f in page.frames:
+                            if f.is_detached(): continue
+                            try:
+                                locs = f.get_by_text(table_title, exact=False)
+                                if locs.count() > 0:
+                                    loc = locs.first
+                                    if loc.is_visible(timeout=50):
+                                        loc.scroll_into_view_if_needed()
+                                        raw_rect = loc.evaluate(\"\"\"el => {
+                                            let container = el;
+                                            let depth = 0;
+                                            while (container && container.parentElement && depth < 30) {
+                                                if (container.offsetHeight > 200 && container.offsetWidth > 400) {
+                                                    return container.getBoundingClientRect();
+                                                }
+                                                container = container.parentElement;
+                                                depth++;
+                                            }
+                                            return null;
+                                        }\"\"\")
+                                        
+                                        if raw_rect:
+                                            offset_x = 0
+                                            offset_y = 0
+                                            if f != page.main_frame:
+                                                try:
+                                                    f_box = f.frame_element().bounding_box()
+                                                    if f_box:
+                                                        offset_x = f_box['x']
+                                                        offset_y = f_box['y']
+                                                except: pass
+                                            
+                                            vw = page.evaluate('window.innerWidth')
+                                            vh = page.evaluate('window.innerHeight')
+                                            x = max(0, raw_rect['x'] + offset_x)
+                                            y = max(0, raw_rect['y'] + offset_y)
+                                            width = min(raw_rect['width'], vw - x)
+                                            height = min(raw_rect['height'], vh - y)
+                                            
+                                            crop_box = { 'x': x, 'y': y, 'width': width, 'height': height, 'valid': (height > 100 and width > 100) }
+                                            break
+                            except: pass
+                        if crop_box: break
+                        page.wait_for_timeout(2000)
+
+                    if crop_box and crop_box['valid']:
+                        page.screenshot(path=file_path, clip={'x': crop_box['x'], 'y': crop_box['y'], 'width': crop_box['width'], 'height': crop_box['height']}, timeout=25000)
+                        status = f'CROPPED ({int(crop_box[\"width\"])})x({int(crop_box[\"height\"])})'
+                    else:
+                        page.screenshot(path=file_path, full_page=False, timeout=25000)
+                        status = 'FULL VIEWPORT (Fallback)'
+
+                    captured_results.append({
+                        'index': idx + 1, 'tab': tab_name, 'title': table_title, 'file': filename, 'path': file_path, 'status': status
+                    })
+                    print(f'Saved to Downloads: {filename} -> {status}', flush=True)
 
                 except Exception as e:
                     print(f'      [!] Report {idx+1} failed catastrophically: {e}', flush=True)
