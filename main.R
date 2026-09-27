@@ -40,11 +40,14 @@ if (!virtualenv_exists(env_name)) {
 }
 use_virtualenv(env_name, required = TRUE)
 
-# --- 4. DYNAMIC DOWNLOADS FOLDER PATH TARGETING ---
+# --- 4. PATH TARGETING (DOWNLOADS & PERSISTENT SESSION) ---
 downloads_folder <- file.path(Sys.getenv("USERPROFILE"), "Downloads")
 if (!dir.exists(downloads_folder)) {
   downloads_folder <- file.path(Sys.getenv("HOME"), "Downloads")
 }
+
+# MUST MATCH THE DIRECTORY FROM YOUR MANUAL LOGIN SCRIPT
+user_data_dir <- normalizePath(file.path(getwd(), "zoho_r_session"), winslash = "/", mustWork = FALSE)
 
 # --- Reports Configuration ---
 reports_config <- list(
@@ -159,13 +162,11 @@ reports_config <- list(
 
 capture_all_reports <- function() {
   message(sprintf("Target directory resolved to: %s", downloads_folder))
-  message("Opening background browser to process reports locally...")
-  
-  z_email <- "gursewak.singh@shadowfax.in"
-  z_pass <- "Guru#24$2024"
+  message(sprintf("Loading persistent session from: %s", user_data_dir))
   
   json_data_str <- as.character(jsonlite::toJSON(reports_config, auto_unbox = TRUE))
   target_dir_str <- normalizePath(downloads_folder, winslash = "/", mustWork = FALSE)
+  user_data_dir_str <- normalizePath(user_data_dir, winslash = "/", mustWork = FALSE)
   
   py_script <- paste0("
 import json
@@ -176,34 +177,33 @@ from playwright.sync_api import sync_playwright
 
 TARGET_DIR = r'''", target_dir_str, "'''
 REPORTS_LIST = json.loads(r'''", json_data_str, "''')
-Z_EMAIL = r'''", z_email, "'''
-Z_PASS = r'''", z_pass, "'''
+USER_DATA_DIR = r'''", user_data_dir_str, "'''
 
 captured_results = []
 
 def process_reports():
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=['--disable-blink-features=AutomationControlled']
+        # Load the EXACT session profile you created with the manual setup script
+        context = p.chromium.launch_persistent_context(
+            user_data_dir=USER_DATA_DIR,
+            headless=True,  # Runs invisibly in the background
+            args=['--disable-blink-features=AutomationControlled'],
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            viewport={'width': 1920, 'height': 1080},
+            timezone_id='Asia/Kolkata',
+            locale='en-IN'
         )
         
-        context_args = {
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'viewport': {'width': 1920, 'height': 1080},
-            'timezone_id': 'Asia/Kolkata',
-            'locale': 'en-IN'
-        }
-        
-        context = browser.new_context(**context_args)
         context.add_init_script(\"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})\")
         
-        page = context.new_page()
+        # Persistent contexts automatically open one blank page on launch
+        page = context.pages[0] if len(context.pages) > 0 else context.new_page()
         page.set_default_timeout(60000) 
         page.on('dialog', lambda dialog: dialog.accept())
-        
-        is_authenticated = False
 
+        # -----------------------------------------------
+        # SORTING LOGIC
+        # -----------------------------------------------
         def apply_sort(column_name):
             print(f\"\\n   -> Sorting on column: [ {column_name} ]\", flush=True)
             target_clean = ''.join(e for e in column_name.lower() if e.isalnum())
@@ -253,6 +253,9 @@ def process_reports():
             else:
                 print(f\"      [!] Warning: Could not locate column '{column_name}' for sorting after 30s.\", flush=True)
 
+        # -----------------------------------------------
+        # FILTERING LOGIC
+        # -----------------------------------------------
         def apply_filter(filter_label, filter_value):
             print(f\"\\n   -> Applying filter: [ {filter_label} ] -> [ {filter_value} ]\", flush=True)
             opened = False
@@ -325,6 +328,9 @@ def process_reports():
             print(\"      -> Waiting 10 seconds for dashboard data to reload...\", flush=True)
             page.wait_for_timeout(10000) 
 
+        # -----------------------------------------------
+        # THE FAIL-SAFE LOOP
+        # -----------------------------------------------
         try:
             for idx, item in enumerate(REPORTS_LIST):
                 try:
@@ -342,76 +348,9 @@ def process_reports():
                     try: page.evaluate(\"window.onbeforeunload = null;\")
                     except: pass
 
+                    # Loads directly using your saved, authenticated session
                     page.goto(report_url, wait_until='domcontentloaded')
-                    
-                    # -----------------------------------------------
-                    # LEVEL 38: STRICT STATE-AWARE SAML LOGIN
-                    # -----------------------------------------------
-                    if not is_authenticated:
-                        page.wait_for_timeout(5000)
-                        
-                        # Only trigger if we are definitively on a login page, not a dashboard
-                        if page.url.startswith(\"https://accounts.zoho.in\") or \"google.com\" in page.url:
-                            print(\"      -> Detected Login Screen. Initiating Human-Mimic Login...\", flush=True)
-                            try:
-                                if page.url.startswith(\"https://accounts.zoho.in\"):
-                                    zoho_input = page.locator(\"input#login_id, input[name='LOGIN_ID'], input[type='email']\")
-                                    if zoho_input.count() > 0 and zoho_input.first.is_visible(timeout=5000):
-                                        print(\"         -> Typing email into Zoho gate...\", flush=True)
-                                        zoho_input.first.click()
-                                        zoho_input.first.press_sequentially(Z_EMAIL, delay=100)
-                                        page.wait_for_timeout(1500)
-                                        page.keyboard.press(\"Enter\")
-                                        page.wait_for_timeout(8000)
-
-                                if \"google.com\" in page.url or \"saml\" in page.url.lower():
-                                    google_email = page.locator(\"input[type='email']\")
-                                    if google_email.count() > 0 and google_email.first.is_visible(timeout=3000):
-                                        print(\"         -> Typing Google SSO Email...\", flush=True)
-                                        google_email.first.click()
-                                        google_email.first.press_sequentially(Z_EMAIL, delay=50)
-                                        page.wait_for_timeout(1000)
-                                        page.keyboard.press(\"Enter\")
-                                        page.wait_for_timeout(5000)
-                                    
-                                    google_pass = page.locator(\"input[type='password']\")
-                                    if google_pass.count() > 0 and google_pass.first.is_visible(timeout=8000):
-                                        print(\"         -> Typing Google SSO Password...\", flush=True)
-                                        google_pass.first.click()
-                                        google_pass.first.press_sequentially(Z_PASS, delay=50)
-                                        page.wait_for_timeout(1000)
-                                        page.keyboard.press(\"Enter\")
-                                        page.wait_for_timeout(10000)
-                                        
-                                for _ in range(20):
-                                    # Strict enforcement: MUST start with analytics workspace, ignoring query redirects
-                                    if page.url.startswith(\"https://analytics.zoho.in/workspace\"):
-                                        print(\"         -> Successfully authenticated via SAML.\", flush=True)
-                                        is_authenticated = True
-                                        break
-                                    page.wait_for_timeout(2000)
-                                    
-                                if not is_authenticated:
-                                    print(\"         [!] Failed to route to dashboard. Taking debug screenshot...\", flush=True)
-                                    debug_path = os.path.join(TARGET_DIR, '0_DEBUG_LOGIN_FAILED.png')
-                                    page.screenshot(path=debug_path, full_page=True)
-                                    captured_results.append({
-                                        'index': 0, 'tab': 'DEBUG', 'title': 'LOGIN FAILED', 'file': '0_DEBUG_LOGIN_FAILED.png', 'path': debug_path, 'status': 'DEBUG SENT'
-                                    })
-                                    
-                            except Exception as e:
-                                print(f\"         [!] SAML Automation Error: {e}\", flush=True)
-                        
-                        if is_authenticated:
-                            print(\"      -> Waiting 18 seconds for Zoho Dashboard to fully mount...\", flush=True)
-                            page.wait_for_timeout(18000) 
-                            
-                            print(f\"      -> Forcing Re-Navigation to restore the Deep Link to: {tab_name}...\", flush=True)
-                            page.goto(report_url, wait_until='domcontentloaded')
-                            page.wait_for_timeout(10000)
-                        
-                    else:
-                        page.wait_for_timeout(8000)
+                    page.wait_for_timeout(15000) 
                     
                     apply_filter('SZM:', 'Gursewak Singh')
 
@@ -425,6 +364,9 @@ def process_reports():
                         
                     page.wait_for_timeout(5000)
 
+                    # -----------------------------------------------
+                    # CROPPING ENGINE
+                    # -----------------------------------------------
                     crop_box = None
                     for attempt in range(10): 
                         for f in page.frames:
@@ -493,7 +435,6 @@ def process_reports():
                     })
         finally:
             context.close()
-            browser.close()
 
 process_reports()
 ")
